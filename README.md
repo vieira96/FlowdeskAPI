@@ -1,61 +1,167 @@
 # Flowdesk
 
-Sistema inteligente de gestão de chamados, desenvolvido com Laravel, PHP 8.4, MySQL 8.4 e Redis 8 em Docker.
+API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento.
 
-O projeto será construído por módulos: autenticação e acessos, chamados, prioridades e SLA, comentários, automações, auditoria, notificações e recursos de IA. Ele não possui isolamento por empresas: todos os usuários pertencem à mesma instalação.
+Não é um SaaS: todos os usuários pertencem à mesma instalação.
 
-## Acesso inicial
+## O que já existe
 
-Após a primeira instalação, entre pela API com o usuário administrador local:
+- Login com Laravel Sanctum.
+- Roles: `admin`, `agent` e `requester`.
+- Equipes com vários agentes; um agente pode estar em mais de uma equipe.
+- Categorias ligadas a uma equipe responsável.
+- Abertura de tickets por solicitantes.
+- Atendimento: assumir ticket, comentar, resolver e fechar.
+- Controle de acesso com Policies.
+- OpenAPI, collection do Postman e testes automatizados.
 
-- E-mail: `admin@admin.com`
-- Senha: `abcd1234`
+## Fluxo de um chamado
 
-Também são criados usuários de demonstração: `agent@agent.com` (agente) e `requester@requester.com` (solicitante), ambos com a senha `abcd1234`.
+```text
+Solicitante abre o chamado e escolhe uma categoria
+                 ↓
+A categoria informa qual equipe atende aquele assunto
+                 ↓
+O ticket é criado para a equipe com status open
+                 ↓
+Um agente daquela equipe assume o ticket
+                 ↓
+in_progress → resolved → closed
+```
 
-Altere essa senha antes de expor a aplicação em qualquer ambiente público.
+O frontend não informa a equipe do ticket. O backend busca a equipe pela categoria, evitando que alguém direcione um chamado para uma equipe diferente pelo payload.
 
-## Primeira instalação no Linux
+## Regras de acesso
 
-É necessário ter Docker Engine e o plugin Docker Compose instalados. Depois de clonar o repositório, execute:
+| Ação | Quem pode executar |
+| --- | --- |
+| Criar equipe, categoria e vínculo de agente | Admin |
+| Abrir ticket | Requester |
+| Listar tickets | Admin ou agente da equipe responsável |
+| Assumir ticket | Agente da equipe responsável |
+| Comentar, resolver ou fechar | Agente que assumiu o ticket |
+
+As regras ficam em `TicketPolicy`. A listagem dos agentes também é filtrada no banco pelo vínculo em `team_members`.
+
+## Estrutura
+
+O código é separado por módulo:
+
+```text
+app/
+├── Http/
+│   ├── Controllers/Api/{Auth,Team,Ticket}
+│   ├── Requests/Api/{Auth,Team,Ticket}
+│   └── Resources/Api/{Auth,Team,Ticket}
+├── Models/{Access,Team,Ticket}
+├── Policies/Ticket
+└── Services/{Auth,Team,Ticket}
+
+routes/api/
+├── auth.php
+├── team.php
+└── ticket.php
+```
+
+Controllers cuidam da camada HTTP. As regras de negócio ficam nos services e as permissões nas policies.
+
+## Banco de dados
+
+As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais frequentes, como:
+
+- membros por equipe e usuário;
+- categorias por equipe e status ativo;
+- tickets por equipe/status, agente/status, solicitante/data e categoria/data;
+- comentários por ticket/data e autor/data.
+
+## Stack
+
+- PHP 8.4 e Laravel 13
+- MySQL 8.4
+- Redis 8
+- Laravel Sanctum
+- Scramble para OpenAPI
+- Docker Compose
+- PHPUnit e Laravel Pint
+
+## Rodando localmente
+
+Pré-requisitos: Docker Engine e Docker Compose Plugin.
+
+Com o Docker instalado, não é necessário configurar PHP, Composer, MySQL, Redis ou variáveis de ambiente manualmente. Basta executar:
 
 ```bash
+git clone <seu-repositorio>
+cd <diretorio-do-projeto>
 ./boot-project-linux.sh
 ```
 
-O script constrói a imagem, inicia MySQL e Redis, instala as dependências PHP, cria o `.env`, gera a chave da aplicação, roda as migrations e inicia a aplicação.
+O `boot-project-linux.sh` faz todo o bootstrap local: cria a imagem PHP, sobe MySQL e Redis, garante os bancos `flowdesk` e `flowdesk_testing`, instala as dependências, cria o `.env`, gera a chave da aplicação, executa as migrations e inicia a API.
 
-O MySQL possui dois bancos locais: `flowdesk` para desenvolvimento e `flowdesk_testing` exclusivamente para testes. Os testes automatizados podem apagar e recriar somente o segundo banco.
+API: [http://localhost:8000](http://localhost:8000)
 
-## Uso diário
+### Usuários de desenvolvimento
 
-```bash
-docker compose up -d
-```
+| Papel | E-mail | Senha |
+| --- | --- | --- |
+| Admin | `admin@admin.com` | `abcd1234` |
+| Agente | `agent@agent.com` | `abcd1234` |
+| Solicitante | `requester@requester.com` | `abcd1234` |
 
-A aplicação estará em [http://localhost:8000](http://localhost:8000).
+Esses usuários são apenas para desenvolvimento local.
 
-## Documentação da API
+## API
 
-Com a aplicação em execução, a documentação interativa OpenAPI está disponível em:
+Documentação OpenAPI em tema escuro:
 
 - [http://localhost:8000/docs/api](http://localhost:8000/docs/api)
-- Especificação OpenAPI JSON: [http://localhost:8000/docs/api.json](http://localhost:8000/docs/api.json)
+- [http://localhost:8000/docs/api.json](http://localhost:8000/docs/api.json)
 
-Os endpoints protegidos usam autenticação Bearer via Laravel Sanctum.
+Endpoints principais:
+
+| Método | Endpoint |
+| --- | --- |
+| `POST` | `/api/v1/auth/login` |
+| `GET`, `POST` | `/api/v1/teams` |
+| `GET`, `POST` | `/api/v1/teams/categories` |
+| `POST` | `/api/v1/teams/{id}/agents` |
+| `GET`, `POST` | `/api/v1/tickets` |
+| `GET` | `/api/v1/tickets/{id}` |
+| `POST` | `/api/v1/tickets/{id}/assume` |
+| `PATCH` | `/api/v1/tickets/{id}/status` |
+| `POST` | `/api/v1/tickets/{id}/comments` |
 
 ## Postman
 
-Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json) no Postman e execute as requisições na ordem das pastas. A collection realiza os logins, cria dados de teste e executa o fluxo completo de atendimento de um ticket.
+Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json). A collection já faz login, cria dados de teste e passa pelo fluxo de atendimento de um ticket.
 
-Para executar comandos Artisan:
+## Testes
 
-```bash
-docker compose exec app php artisan <comando>
+Os testes usam um banco separado:
+
+```text
+flowdesk          # desenvolvimento
+flowdesk_testing  # testes
 ```
 
-Para parar os serviços mantendo os dados:
+Assim, o `RefreshDatabase` pode recriar tabelas em `flowdesk_testing` sem apagar dados locais de desenvolvimento.
 
 ```bash
-docker compose down
+docker compose exec app php artisan test
 ```
+
+Para conferir a quantidade de tickets no banco de desenvolvimento:
+
+```bash
+docker compose exec mysql mysql -uflowdesk -pflowdesk -e "SELECT COUNT(*) AS tickets FROM flowdesk.tickets;"
+```
+
+## Próximos passos
+
+- notificações por banco e e-mail;
+- automações baseadas em eventos;
+- SLA e escalonamento;
+- auditoria de alterações;
+- anexos;
+- sugestões de categoria e prioridade por IA;
+- interface web.
