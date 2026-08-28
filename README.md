@@ -11,6 +11,8 @@ Após a primeira instalação, entre pela API com o usuário administrador local
 - E-mail: `admin@admin.com`
 - Senha: `abcd1234`
 
+Também são criados usuários de demonstração: `agent@agent.com` (agente) e `requester@requester.com` (solicitante), ambos com a senha `abcd1234`.
+
 Altere essa senha antes de expor a aplicação em qualquer ambiente público.
 
 ## Primeira instalação no Linux
