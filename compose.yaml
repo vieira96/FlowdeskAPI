@@ -10,9 +10,41 @@ services:
       - "8000:8000"
     volumes:
       - .:/var/www/html
+    environment:
+      REVERB_HOST: reverb
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  queue:
+    container_name: flowdesk-queue
+    build:
+      context: .
+    command: php artisan queue:work redis --sleep=1 --tries=3 --timeout=90
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - .:/var/www/html
+    environment:
+      REVERB_HOST: reverb
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  reverb:
+    container_name: flowdesk-reverb
+    build:
+      context: .
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/var/www/html
+    depends_on:
       redis:
         condition: service_healthy
 

@@ -10,6 +10,7 @@ RUN apk add --no-cache \
         unzip \
     && docker-php-ext-install \
         mbstring \
+        pcntl \
         pdo_mysql \
         zip \
     && apk add --no-cache $PHPIZE_DEPS \

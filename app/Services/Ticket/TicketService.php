@@ -6,11 +6,14 @@ use App\Models\Team\TeamCategory;
 use App\Models\Ticket\Ticket;
 use App\Models\Ticket\TicketComment;
 use App\Models\User;
+use App\Services\Notification\TicketNotificationService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 
 class TicketService
 {
+    public function __construct(private readonly TicketNotificationService $ticketNotificationService) {}
+
     public function paginate(array $filters, User $user): LengthAwarePaginator
     {
         $query = Ticket::query()
@@ -69,7 +72,10 @@ class TicketService
             'status' => 'in_progress',
         ]);
 
-        return $ticket->load(['category', 'team', 'assignee']);
+        $ticket->load(['category', 'team', 'assignee', 'requester']);
+        $this->ticketNotificationService->notifyTicketAssumed($ticket);
+
+        return $ticket;
     }
 
     public function changeStatus(Ticket $ticket, string $status): Ticket
@@ -87,7 +93,10 @@ class TicketService
 
         $ticket->update(['status' => $status]);
 
-        return $ticket->load(['category', 'team', 'assignee']);
+        $ticket->load(['category', 'team', 'assignee', 'requester']);
+        $this->ticketNotificationService->notifyStatusChanged($ticket);
+
+        return $ticket;
     }
 
     public function addComment(Ticket $ticket, User $agent, string $body): TicketComment

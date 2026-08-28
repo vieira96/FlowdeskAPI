@@ -14,10 +14,15 @@
     { "key": "admin_token", "value": "" },
     { "key": "agent_token", "value": "" },
     { "key": "requester_token", "value": "" },
+    { "key": "requester_id", "value": "" },
     { "key": "agent_id", "value": "" },
     { "key": "team_id", "value": "" },
     { "key": "category_id", "value": "" },
-    { "key": "ticket_id", "value": "" }
+    { "key": "ticket_id", "value": "" },
+    { "key": "notification_id", "value": "" },
+    { "key": "reverb_app_key", "value": "", "description": "Copie o valor de REVERB_APP_KEY do arquivo .env." },
+    { "key": "socket_id", "value": "", "description": "Copie o socket_id recebido ao conectar no WebSocket." },
+    { "key": "reverb_auth", "value": "", "description": "Preenchido pela requisição de autorização do canal privado." }
   ],
   "item": [
     {
@@ -64,7 +69,9 @@
             "listen": "test",
             "script": { "type": "text/javascript", "exec": [
               "pm.test('Login do solicitante retornou 200', () => pm.response.to.have.status(200));",
-              "pm.collectionVariables.set('requester_token', pm.response.json().data.token);"
+              "const body = pm.response.json().data;",
+              "pm.collectionVariables.set('requester_token', body.token);",
+              "pm.collectionVariables.set('requester_id', body.user.id);"
             ] }
           }],
           "request": {
@@ -232,7 +239,65 @@
       ]
     },
     {
-      "name": "04 - Encerrar sessões",
+      "name": "04 - Notificações",
+      "item": [
+        {
+          "name": "Solicitante lista notificações",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Notificações listadas', () => pm.response.to.have.status(200));",
+              "const notification = pm.response.json().data[0];",
+              "if (notification) pm.collectionVariables.set('notification_id', notification.id);"
+            ] }
+          }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "url": "{{base_url}}/api/v1/notifications"
+          }
+        },
+        {
+          "name": "Solicitante marca notificação como lida",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "url": "{{base_url}}/api/v1/notifications/{{notification_id}}/read"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Preparação WebSocket (Reverb)",
+      "description": "O Postman não permite misturar requisições HTTP e WebSocket na mesma collection; por isso, crie a conexão WebSocket manualmente em New > WebSocket. Use: ws://localhost:8080/app/{{reverb_app_key}}?protocol=7&client=postman&version=1.0&flash=false. Copie o data.socket_id da primeira mensagem recebida para a variável socket_id e, então, execute a autorização abaixo. O auth é vinculado ao socket_id: sempre que desconectar ou reconectar, repita a autorização antes de enviar a inscrição.",
+      "item": [
+        {
+          "name": "Autorizar canal privado do solicitante",
+          "description": "Crie antes uma conexão nativa em New > WebSocket e conecte em ws://localhost:8080/app/{{reverb_app_key}}?protocol=7&client=postman&version=1.0&flash=false. Copie o data.socket_id para a variável socket_id e execute esta requisição. O auth vale somente para esse socket_id. Em seguida, envie na conexão WebSocket:\n\n{\n  \"event\": \"pusher:subscribe\",\n  \"data\": {\n    \"channel\": \"private-App.Models.User.{{requester_id}}\",\n    \"auth\": \"{{reverb_auth}}\"\n  }\n}\n\nA confirmação esperada é pusher_internal:subscription_succeeded.",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Canal privado autorizado', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('reverb_auth', pm.response.json().auth);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "socket_id", "value": "{{socket_id}}", "type": "text" },
+                { "key": "channel_name", "value": "private-App.Models.User.{{requester_id}}", "type": "text" }
+              ]
+            },
+            "url": "{{base_url}}/api/broadcasting/auth"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Encerrar sessões",
       "item": [
         {
           "name": "Logout - Solicitante",

@@ -20,7 +20,7 @@ export LOCAL_UID="$(id -u)"
 export LOCAL_GID="$(id -g)"
 
 echo "Construindo a imagem PHP..."
-docker compose build app
+docker compose build app queue reverb
 
 echo "Iniciando MySQL e Redis..."
 docker compose up -d --wait mysql redis
@@ -49,8 +49,8 @@ if ! grep -q '^APP_KEY=base64:' .env; then
 fi
 docker compose run --rm --name flowdesk-app-bootstrap app php artisan migrate --force
 
-echo "Iniciando a aplicação..."
-docker compose up -d app
+echo "Iniciando a aplicação, fila e WebSocket..."
+docker compose up -d app queue reverb
 
 echo
 echo "Projeto pronto em http://localhost:8000"
