@@ -42,6 +42,10 @@ Com a aplicação em execução, a documentação interativa OpenAPI está dispo
 
 Os endpoints protegidos usam autenticação Bearer via Laravel Sanctum.
 
+## Postman
+
+Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json) no Postman e execute as requisições na ordem das pastas. A collection realiza os logins, cria dados de teste e executa o fluxo completo de atendimento de um ticket.
+
 Para executar comandos Artisan:
 
 ```bash

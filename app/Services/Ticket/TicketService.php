@@ -4,6 +4,7 @@ namespace App\Services\Ticket;
 
 use App\Models\Team\TeamCategory;
 use App\Models\Ticket\Ticket;
+use App\Models\Ticket\TicketComment;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
@@ -47,5 +48,54 @@ class TicketService
             'team_id' => $category->team_id,
             'requester_id' => $requester->id,
         ])->load(['category', 'team']);
+    }
+
+    public function assume(Ticket $ticket, User $agent): Ticket
+    {
+        if ($ticket->assignee_id !== null) {
+            throw ValidationException::withMessages([
+                'assignee_id' => 'Este ticket já possui um agente responsável.',
+            ]);
+        }
+
+        if ($ticket->status !== 'open') {
+            throw ValidationException::withMessages([
+                'status' => 'Somente tickets abertos podem ser assumidos.',
+            ]);
+        }
+
+        $ticket->update([
+            'assignee_id' => $agent->id,
+            'status' => 'in_progress',
+        ]);
+
+        return $ticket->load(['category', 'team', 'assignee']);
+    }
+
+    public function changeStatus(Ticket $ticket, string $status): Ticket
+    {
+        $transitions = [
+            'in_progress' => ['resolved'],
+            'resolved' => ['closed'],
+        ];
+
+        if (! in_array($status, $transitions[$ticket->status] ?? [], true)) {
+            throw ValidationException::withMessages([
+                'status' => "A transição de {$ticket->status} para {$status} não é permitida.",
+            ]);
+        }
+
+        $ticket->update(['status' => $status]);
+
+        return $ticket->load(['category', 'team', 'assignee']);
+    }
+
+    public function addComment(Ticket $ticket, User $agent, string $body): TicketComment
+    {
+        return TicketComment::query()->create([
+            'ticket_id' => $ticket->id,
+            'user_id' => $agent->id,
+            'body' => $body,
+        ])->load('author');
     }
 }

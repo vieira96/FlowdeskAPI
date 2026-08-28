@@ -147,6 +147,67 @@ class TicketTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_an_agent_from_the_ticket_team_can_assume_resolve_and_close_a_ticket(): void
+    {
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $team = Team::query()->where('name', 'Suporte de TI')->firstOrFail();
+        TeamMember::query()->create(['team_id' => $team->id, 'user_id' => $agent->id]);
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $token = $agent->createToken('test')->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson("/api/v1/tickets/{$ticket->id}/assume")
+            ->assertOk()
+            ->assertJsonPath('data.assignee_id', $agent->id)
+            ->assertJsonPath('data.status', 'in_progress');
+
+        $this->withToken($token)
+            ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'resolved'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'resolved');
+
+        $this->withToken($token)
+            ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'closed'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'closed');
+    }
+
+    public function test_only_the_assigned_agent_can_comment_on_a_ticket(): void
+    {
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $team = Team::query()->where('name', 'Suporte de TI')->firstOrFail();
+        TeamMember::query()->create(['team_id' => $team->id, 'user_id' => $agent->id]);
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $token = $agent->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson("/api/v1/tickets/{$ticket->id}/assume")->assertOk();
+
+        $this->withToken($token)
+            ->postJson("/api/v1/tickets/{$ticket->id}/comments", ['body' => 'Estou verificando o equipamento.'])
+            ->assertCreated()
+            ->assertJsonPath('data.body', 'Estou verificando o equipamento.')
+            ->assertJsonPath('data.author.id', $agent->id);
+    }
+
+    public function test_an_agent_cannot_skip_the_status_transition_flow(): void
+    {
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $team = Team::query()->where('name', 'Suporte de TI')->firstOrFail();
+        TeamMember::query()->create(['team_id' => $team->id, 'user_id' => $agent->id]);
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $token = $agent->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson("/api/v1/tickets/{$ticket->id}/assume")->assertOk();
+
+        $this->withToken($token)
+            ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'closed'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+    }
+
     private function createTicket(TeamCategory $category, User $requester): Ticket
     {
         return Ticket::query()->create([

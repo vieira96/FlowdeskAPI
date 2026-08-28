@@ -27,6 +27,7 @@ class TicketResource extends JsonResource
                 'id' => $this->team->id,
                 'name' => $this->team->name,
             ]),
+            'comments' => TicketCommentResource::collection($this->whenLoaded('comments')),
             'created_at' => $this->created_at?->toISOString(),
         ];
     }

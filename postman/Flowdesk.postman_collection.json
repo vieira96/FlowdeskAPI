@@ -1,0 +1,264 @@
+{
+  "info": {
+    "_postman_id": "76f2ab19-61e8-4bb2-8654-2f0e2a85b1b5",
+    "name": "Flowdesk API",
+    "description": "Collection de demonstração da API Flowdesk. Execute as requisições na ordem apresentada para criar e atender um chamado completo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "admin_email", "value": "admin@admin.com" },
+    { "key": "agent_email", "value": "agent@agent.com" },
+    { "key": "requester_email", "value": "requester@requester.com" },
+    { "key": "default_password", "value": "abcd1234" },
+    { "key": "admin_token", "value": "" },
+    { "key": "agent_token", "value": "" },
+    { "key": "requester_token", "value": "" },
+    { "key": "agent_id", "value": "" },
+    { "key": "team_id", "value": "" },
+    { "key": "category_id", "value": "" },
+    { "key": "ticket_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "01 - Autenticação",
+      "item": [
+        {
+          "name": "Login - Admin",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Login do admin retornou 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json().data;",
+              "pm.collectionVariables.set('admin_token', body.token);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{default_password}}\"\n}" },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Login - Agente",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Login do agente retornou 200', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json().data;",
+              "pm.collectionVariables.set('agent_token', body.token);",
+              "pm.collectionVariables.set('agent_id', body.user.id);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{agent_email}}\",\n  \"password\": \"{{default_password}}\"\n}" },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Login - Solicitante",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Login do solicitante retornou 200', () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.set('requester_token', pm.response.json().data.token);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{requester_email}}\",\n  \"password\": \"{{default_password}}\"\n}" },
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "Perfil do Admin",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Equipe e categoria de teste",
+      "item": [
+        {
+          "name": "Criar equipe",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Equipe criada', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('team_id', pm.response.json().data.id);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Equipe de teste {{$randomUUID}}\",\n  \"description\": \"Equipe criada pela collection Postman.\"\n}" },
+            "url": "{{base_url}}/api/v1/teams"
+          }
+        },
+        {
+          "name": "Vincular agente à equipe",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Agente vinculado', () => pm.response.to.have.status(200));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"agent_ids\": [\"{{agent_id}}\"]\n}" },
+            "url": "{{base_url}}/api/v1/teams/{{team_id}}/agents"
+          }
+        },
+        {
+          "name": "Listar equipes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/v1/teams"
+          }
+        },
+        {
+          "name": "Criar categoria",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Categoria criada', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('category_id', pm.response.json().data.id);"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"team_id\": \"{{team_id}}\",\n  \"name\": \"Categoria de teste {{$randomUUID}}\",\n  \"description\": \"Categoria criada pela collection Postman.\"\n}" },
+            "url": "{{base_url}}/api/v1/teams/categories"
+          }
+        },
+        {
+          "name": "Listar categorias",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "url": "{{base_url}}/api/v1/teams/categories"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Chamado e atendimento",
+      "item": [
+        {
+          "name": "Solicitante cria ticket",
+          "event": [{
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "pm.test('Ticket criado', () => pm.response.to.have.status(201));",
+              "const ticket = pm.response.json().data;",
+              "pm.collectionVariables.set('ticket_id', ticket.id);",
+              "pm.test('Ticket foi direcionado para a equipe criada', () => pm.expect(ticket.team.id).to.eql(pm.collectionVariables.get('team_id')));"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Falha de teste {{$randomUUID}}\",\n  \"description\": \"Ticket de demonstração criado pela collection Postman.\",\n  \"category_id\": \"{{category_id}}\",\n  \"priority\": \"high\"\n}" },
+            "url": "{{base_url}}/api/v1/tickets"
+          }
+        },
+        {
+          "name": "Agente lista tickets da própria equipe",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "url": "{{base_url}}/api/v1/tickets?status=open"
+          }
+        },
+        {
+          "name": "Agente consulta o ticket",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}"
+          }
+        },
+        {
+          "name": "Agente assume o ticket",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Ticket assumido', () => pm.response.to.have.status(200));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/assume"
+          }
+        },
+        {
+          "name": "Agente adiciona comentário",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Comentário criado', () => pm.response.to.have.status(201));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"Atendimento iniciado pelo agente de teste.\"\n}" },
+            "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/comments"
+          }
+        },
+        {
+          "name": "Resolver ticket",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"resolved\"\n}" },
+            "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/status"
+          }
+        },
+        {
+          "name": "Fechar ticket",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"closed\"\n}" },
+            "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/status"
+          }
+        },
+        {
+          "name": "Admin lista todos os tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/v1/tickets"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Encerrar sessões",
+      "item": [
+        {
+          "name": "Logout - Solicitante",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/logout"
+          }
+        },
+        {
+          "name": "Logout - Agente",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{agent_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/logout"
+          }
+        },
+        {
+          "name": "Logout - Admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+            "url": "{{base_url}}/api/v1/auth/logout"
+          }
+        }
+      ]
+    }
+  ]
+}

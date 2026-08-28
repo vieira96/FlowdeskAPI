@@ -26,4 +26,25 @@ class TicketPolicy
         return $user->role?->slug === 'agent'
             && $user->teams()->whereKey($ticket->team_id)->exists();
     }
+
+    public function assume(User $user, Ticket $ticket): bool
+    {
+        return $this->isAgentFromTicketTeam($user, $ticket);
+    }
+
+    public function updateStatus(User $user, Ticket $ticket): bool
+    {
+        return $this->isAgentFromTicketTeam($user, $ticket) && $ticket->assignee_id === $user->id;
+    }
+
+    public function comment(User $user, Ticket $ticket): bool
+    {
+        return $this->updateStatus($user, $ticket);
+    }
+
+    private function isAgentFromTicketTeam(User $user, Ticket $ticket): bool
+    {
+        return $user->role?->slug === 'agent'
+            && $user->teams()->whereKey($ticket->team_id)->exists();
+    }
 }
