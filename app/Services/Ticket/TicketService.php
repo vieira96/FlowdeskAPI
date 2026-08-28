@@ -7,12 +7,16 @@ use App\Models\Ticket\Ticket;
 use App\Models\Ticket\TicketComment;
 use App\Models\User;
 use App\Services\Notification\TicketNotificationService;
+use App\Services\Sla\TicketSlaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Validation\ValidationException;
 
 class TicketService
 {
-    public function __construct(private readonly TicketNotificationService $ticketNotificationService) {}
+    public function __construct(
+        private readonly TicketNotificationService $ticketNotificationService,
+        private readonly TicketSlaService $ticketSlaService,
+    ) {}
 
     public function paginate(array $filters, User $user): LengthAwarePaginator
     {
@@ -42,14 +46,18 @@ class TicketService
             ]);
         }
 
+        $priority = $data['priority'] ?? 'medium';
+        $deadlines = $this->ticketSlaService->deadlinesFor($priority);
+
         return Ticket::query()->create([
             'title' => $data['title'],
             'description' => $data['description'],
-            'priority' => $data['priority'] ?? 'medium',
+            'priority' => $priority,
             'status' => 'open',
             'category_id' => $category->id,
             'team_id' => $category->team_id,
             'requester_id' => $requester->id,
+            ...$deadlines,
         ])->load(['category', 'team', 'assignee']);
     }
 
@@ -70,6 +78,7 @@ class TicketService
         $ticket->update([
             'assignee_id' => $agent->id,
             'status' => 'in_progress',
+            'first_responded_at' => $this->ticketSlaService->firstResponseAt(),
         ]);
 
         $ticket->load(['category', 'team', 'assignee', 'requester']);
@@ -91,7 +100,10 @@ class TicketService
             ]);
         }
 
-        $ticket->update(['status' => $status]);
+        $ticket->update([
+            'status' => $status,
+            'resolved_at' => $status === 'resolved' ? $this->ticketSlaService->resolvedAt() : $ticket->resolved_at,
+        ]);
 
         $ticket->load(['category', 'team', 'assignee', 'requester']);
         $this->ticketNotificationService->notifyStatusChanged($ticket);

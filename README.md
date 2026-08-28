@@ -12,6 +12,7 @@ Não é um SaaS: todos os usuários pertencem à mesma instalação.
 - Categorias ligadas a uma equipe responsável.
 - Abertura de tickets por solicitantes.
 - Atendimento: assumir ticket, comentar, resolver e fechar.
+- SLA por prioridade, com prazo de primeira resposta e resolução.
 - Notificações persistidas no banco e entregues em tempo real via WebSocket.
 - Controle de acesso com Policies.
 - OpenAPI, collection do Postman e testes automatizados.
@@ -75,6 +76,7 @@ As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais fr
 - membros por equipe e usuário;
 - categorias por equipe e status ativo;
 - tickets por equipe/status, agente/status, solicitante/data e categoria/data;
+- tickets por status e vencimento de SLA para acompanhamento operacional;
 - comentários por ticket/data e autor/data.
 - notificações por usuário, leitura e data de criação.
 
@@ -89,6 +91,17 @@ As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais fr
 - Docker Compose
 - PHPUnit e Laravel Pint
 
+## SLA
+
+Os prazos são calculados em horas corridas no momento de abertura do ticket. A primeira resposta é registrada quando um agente assume o chamado e a resolução quando o status passa para `resolved`.
+
+| Prioridade | Primeira resposta | Resolução |
+| --- | --- | --- |
+| `low` | 8 horas | 72 horas |
+| `medium` | 4 horas | 24 horas |
+| `high` | 1 hora | 8 horas |
+| `urgent` | 30 minutos | 4 horas |
+
 ## Rodando localmente
 
 Pré-requisitos: Docker Engine e Docker Compose Plugin.
@@ -101,7 +114,7 @@ cd <diretorio-do-projeto>
 ./boot-project-linux.sh
 ```
 
-O `boot-project-linux.sh` faz todo o bootstrap local: cria a imagem PHP, sobe MySQL, Redis, a fila e o servidor WebSocket, garante os bancos `flowdesk` e `flowdesk_testing`, instala as dependências, cria o `.env`, gera a chave da aplicação, executa as migrations e inicia a API.
+O `boot-project-linux.sh` faz todo o bootstrap local: cria a imagem PHP, sobe MySQL, Redis, a fila e o servidor WebSocket, instala as dependências, cria o `.env`, gera a chave da aplicação, executa as migrations e inicia a API.
 
 API: [http://localhost:8000](http://localhost:8000)
 
@@ -148,34 +161,38 @@ O processamento assíncrono usa Redis e o container `flowdesk-queue`. Não há e
 
 Ao testar manualmente, a assinatura do canal é vinculada ao `socket_id` retornado na conexão. Se a conexão for reaberta, gere uma nova autorização em `POST /api/broadcasting/auth` antes de assinar o canal novamente.
 
+### Teste pelo Postman
+
+1. Faça login como solicitante e guarde o token e o UUID retornados.
+2. No Postman, crie uma conexão nativa em `New > WebSocket` — não abra uma requisição HTTP.
+3. Conecte em `ws://localhost:8080/app/{REVERB_APP_KEY}?protocol=7&client=postman&version=1.0&flash=false`.
+4. Copie o `socket_id` recebido no evento `pusher:connection_established` e envie `POST /api/broadcasting/auth` com o token Sanctum, `socket_id` e `channel_name=private-App.Models.User.{UUID_DO_SOLICITANTE}`.
+5. Envie a inscrição abaixo na conexão WebSocket usando o `auth` retornado pela API:
+
+```json
+{
+  "event": "pusher:subscribe",
+  "data": {
+    "channel": "private-App.Models.User.{UUID_DO_SOLICITANTE}",
+    "auth": "{AUTH_RETORNADO_PELA_API}"
+  }
+}
+```
+
+O evento `pusher_internal:subscription_succeeded` confirma a inscrição. Ao assumir, resolver ou fechar um ticket, o canal recebe a notificação `ticket.activity`.
+
 ## Postman
 
 Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json). A collection já faz login, cria dados de teste, passa pelo fluxo de atendimento e prepara a autorização do canal privado de notificações. A conexão WebSocket deve ser criada pelo menu `New > WebSocket` do Postman, pois ele não permite misturar requisições HTTP e WebSocket na mesma collection.
 
 ## Testes
 
-Os testes usam um banco separado:
-
-```text
-flowdesk          # desenvolvimento
-flowdesk_testing  # testes
-```
-
-Assim, o `RefreshDatabase` pode recriar tabelas em `flowdesk_testing` sem apagar dados locais de desenvolvimento.
-
 ```bash
 docker compose exec app php artisan test
 ```
 
-Para conferir a quantidade de tickets no banco de desenvolvimento:
-
-```bash
-docker compose exec mysql mysql -uflowdesk -pflowdesk -e "SELECT COUNT(*) AS tickets FROM flowdesk.tickets;"
-```
-
 ## Próximos passos
 
-- Definir SLA por prioridade, com prazo de resposta e resolução.
 - Criar automações de escalonamento para tickets próximos do vencimento.
 - Registrar histórico e auditoria de alterações do chamado.
 - Permitir anexos em tickets e comentários.

@@ -17,6 +17,12 @@ class TicketResource extends JsonResource
             'description' => $this->description,
             'status' => $this->status,
             'priority' => $this->priority,
+            'sla' => [
+                'first_response_due_at' => $this->first_response_due_at?->toISOString(),
+                'first_responded_at' => $this->first_responded_at?->toISOString(),
+                'resolution_due_at' => $this->resolution_due_at?->toISOString(),
+                'resolved_at' => $this->resolved_at?->toISOString(),
+            ],
             'requester_id' => $this->requester_id,
             'assignee_id' => $this->assignee_id,
             'assignee' => $this->whenLoaded('assignee', fn () => $this->assignee === null ? null : [

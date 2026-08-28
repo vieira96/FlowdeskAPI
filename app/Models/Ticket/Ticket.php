@@ -11,10 +11,33 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['title', 'description', 'status', 'priority', 'category_id', 'team_id', 'requester_id', 'assignee_id'])]
+#[Fillable([
+    'title',
+    'description',
+    'status',
+    'priority',
+    'category_id',
+    'team_id',
+    'requester_id',
+    'assignee_id',
+    'first_response_due_at',
+    'first_responded_at',
+    'resolution_due_at',
+    'resolved_at',
+])]
 class Ticket extends Model
 {
     use HasUuids;
+
+    protected function casts(): array
+    {
+        return [
+            'first_response_due_at' => 'immutable_datetime',
+            'first_responded_at' => 'immutable_datetime',
+            'resolution_due_at' => 'immutable_datetime',
+            'resolved_at' => 'immutable_datetime',
+        ];
+    }
 
     public function category(): BelongsTo
     {

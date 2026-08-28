@@ -7,6 +7,7 @@ use App\Models\Team\TeamCategory;
 use App\Models\Team\TeamMember;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -38,6 +39,35 @@ class TicketTest extends TestCase
             'team_id' => $category->team_id,
             'requester_id' => $requester->id,
         ]);
+    }
+
+    public function test_sla_deadlines_are_calculated_from_ticket_priority(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
+        $startedAt = CarbonImmutable::parse('2026-08-28 10:00:00', 'UTC');
+
+        $this->travelTo($startedAt);
+
+        try {
+            $response = $this->withToken($requester->createToken('test')->plainTextToken)
+                ->postJson('/api/v1/tickets', [
+                    'title' => 'Equipamento indisponível',
+                    'description' => 'Chamado de prioridade alta para validar o SLA.',
+                    'category_id' => $category->id,
+                    'priority' => 'high',
+                ])
+                ->assertCreated();
+
+            $ticket = Ticket::query()->findOrFail($response->json('data.id'));
+
+            $this->assertTrue($ticket->first_response_due_at->equalTo($startedAt->addHour()));
+            $this->assertTrue($ticket->resolution_due_at->equalTo($startedAt->addHours(8)));
+            $this->assertNull($ticket->first_responded_at);
+            $this->assertNull($ticket->resolved_at);
+        } finally {
+            $this->travelBack();
+        }
     }
 
     public function test_the_payload_cannot_override_the_team_derived_from_the_category(): void
@@ -172,6 +202,40 @@ class TicketTest extends TestCase
             ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'closed'])
             ->assertOk()
             ->assertJsonPath('data.status', 'closed');
+    }
+
+    public function test_assuming_and_resolving_a_ticket_records_sla_milestones(): void
+    {
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $team = Team::query()->where('name', 'Suporte de TI')->firstOrFail();
+        TeamMember::query()->create(['team_id' => $team->id, 'user_id' => $agent->id]);
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $token = $agent->createToken('test')->plainTextToken;
+        $firstResponseAt = CarbonImmutable::parse('2026-08-28 10:00:00', 'UTC');
+        $resolvedAt = $firstResponseAt->addHours(2);
+
+        $this->travelTo($firstResponseAt);
+
+        try {
+            $this->withToken($token)
+                ->postJson("/api/v1/tickets/{$ticket->id}/assume")
+                ->assertOk()
+                ->assertJsonPath('data.sla.first_responded_at', $firstResponseAt->toISOString());
+
+            $this->travelTo($resolvedAt);
+
+            $this->withToken($token)
+                ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'resolved'])
+                ->assertOk()
+                ->assertJsonPath('data.sla.resolved_at', $resolvedAt->toISOString());
+
+            $ticket->refresh();
+            $this->assertTrue($ticket->first_responded_at->equalTo($firstResponseAt));
+            $this->assertTrue($ticket->resolved_at->equalTo($resolvedAt));
+        } finally {
+            $this->travelBack();
+        }
     }
 
     public function test_only_the_assigned_agent_can_comment_on_a_ticket(): void
