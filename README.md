@@ -25,6 +25,8 @@ Altere essa senha antes de expor a aplicação em qualquer ambiente público.
 
 O script constrói a imagem, inicia MySQL e Redis, instala as dependências PHP, cria o `.env`, gera a chave da aplicação, roda as migrations e inicia a aplicação.
 
+O MySQL possui dois bancos locais: `flowdesk` para desenvolvimento e `flowdesk_testing` exclusivamente para testes. Os testes automatizados podem apagar e recriar somente o segundo banco.
+
 ## Uso diário
 
 ```bash

@@ -25,21 +25,23 @@ docker compose build app
 echo "Iniciando MySQL e Redis..."
 docker compose up -d --wait mysql redis
 
-echo "Garantindo o banco e o usuário de desenvolvimento..."
+echo "Garantindo os bancos de desenvolvimento e de testes..."
 docker compose exec -T mysql mysql -uroot -proot -e "
     CREATE DATABASE IF NOT EXISTS flowdesk;
+    CREATE DATABASE IF NOT EXISTS flowdesk_testing;
     CREATE USER IF NOT EXISTS 'flowdesk'@'%' IDENTIFIED BY 'flowdesk';
     ALTER USER 'flowdesk'@'%' IDENTIFIED BY 'flowdesk';
     GRANT ALL PRIVILEGES ON flowdesk.* TO 'flowdesk'@'%';
+    GRANT ALL PRIVILEGES ON flowdesk_testing.* TO 'flowdesk'@'%';
     FLUSH PRIVILEGES;
 "
-
-echo "Instalando as dependências PHP..."
-docker compose run --rm --name flowdesk-app-bootstrap app composer install --no-interaction --prefer-dist
 
 if [[ ! -f .env ]]; then
     cp .env.example .env
 fi
+
+echo "Instalando as dependências PHP..."
+docker compose run --rm --name flowdesk-app-bootstrap app composer install --no-interaction --prefer-dist
 
 echo "Configurando a aplicação..."
 if ! grep -q '^APP_KEY=base64:' .env; then

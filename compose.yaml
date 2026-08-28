@@ -10,18 +10,6 @@ services:
       - "8000:8000"
     volumes:
       - .:/var/www/html
-    environment:
-      APP_NAME: Flowdesk
-      APP_ENV: local
-      APP_DEBUG: "true"
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_DATABASE: flowdesk
-      DB_USERNAME: flowdesk
-      DB_PASSWORD: flowdesk
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
     depends_on:
       mysql:
         condition: service_healthy
@@ -40,6 +28,7 @@ services:
       MYSQL_ROOT_PASSWORD: root
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
       interval: 5s

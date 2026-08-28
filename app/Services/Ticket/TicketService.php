@@ -14,7 +14,7 @@ class TicketService
     public function paginate(array $filters, User $user): LengthAwarePaginator
     {
         $query = Ticket::query()
-            ->with(['category', 'team'])
+            ->with(['category', 'team', 'assignee'])
             ->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($filters['priority'] ?? null, fn ($query, $priority) => $query->where('priority', $priority))
             ->when($filters['category_id'] ?? null, fn ($query, $categoryId) => $query->where('category_id', $categoryId));
@@ -47,7 +47,7 @@ class TicketService
             'category_id' => $category->id,
             'team_id' => $category->team_id,
             'requester_id' => $requester->id,
-        ])->load(['category', 'team']);
+        ])->load(['category', 'team', 'assignee']);
     }
 
     public function assume(Ticket $ticket, User $agent): Ticket

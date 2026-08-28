@@ -160,6 +160,7 @@ class TicketTest extends TestCase
             ->postJson("/api/v1/tickets/{$ticket->id}/assume")
             ->assertOk()
             ->assertJsonPath('data.assignee_id', $agent->id)
+            ->assertJsonPath('data.assignee.name', $agent->name)
             ->assertJsonPath('data.status', 'in_progress');
 
         $this->withToken($token)
