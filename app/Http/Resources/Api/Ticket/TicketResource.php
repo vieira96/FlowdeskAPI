@@ -38,6 +38,13 @@ class TicketResource extends JsonResource
                 'id' => $this->team->id,
                 'name' => $this->team->name,
             ]),
+            'ai' => $this->whenLoaded('aiSuggestion', fn () => $this->aiSuggestion === null ? null : [
+                'status' => $this->aiSuggestion->status,
+                'classification' => $this->aiSuggestion->classification,
+                'confidence' => $this->aiSuggestion->confidence,
+                'suggestion' => $this->aiSuggestion->suggestion,
+                'generated_at' => $this->aiSuggestion->generated_at?->toISOString(),
+            ]),
             'comments' => TicketCommentResource::collection($this->whenLoaded('comments')),
             'created_at' => $this->created_at?->toISOString(),
         ];

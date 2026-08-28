@@ -152,12 +152,40 @@ class TicketTest extends TestCase
             ->assertJsonCount(2, 'data');
     }
 
-    public function test_a_requester_cannot_list_tickets(): void
+    public function test_a_requester_only_lists_their_own_tickets(): void
     {
         $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $otherRequester = User::factory()->create();
+        $ownTicket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $this->createTicket(TeamCategory::query()->where('name', 'Rede')->firstOrFail(), $otherRequester);
 
         $this->withToken($requester->createToken('test')->plainTextToken)
             ->getJson('/api/v1/tickets')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $ownTicket->id)
+            ->assertJsonPath('data.0.requester_id', $requester->id);
+    }
+
+    public function test_a_requester_can_view_their_own_ticket(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->getJson("/api/v1/tickets/{$ticket->id}")
+            ->assertOk()
+            ->assertJsonPath('data.id', $ticket->id);
+    }
+
+    public function test_a_requester_cannot_view_another_requesters_ticket(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $otherRequester = User::factory()->create();
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $otherRequester);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->getJson("/api/v1/tickets/{$ticket->id}")
             ->assertForbidden();
     }
 

@@ -35,7 +35,7 @@ class TicketController extends Controller
     {
         abort_unless($request->user()?->can('view', $ticket), 403);
 
-        return new TicketResource($ticket->load(['category', 'team', 'assignee', 'comments.author']));
+        return new TicketResource($ticket->load(['category', 'team', 'assignee', 'comments.author', 'aiSuggestion']));
     }
 
     public function assume(Request $request, Ticket $ticket): TicketResource

@@ -2,6 +2,7 @@
 
 namespace App\Services\Ticket;
 
+use App\Jobs\Ai\GenerateTicketHintJob;
 use App\Models\Team\TeamCategory;
 use App\Models\Ticket\Ticket;
 use App\Models\Ticket\TicketComment;
@@ -26,7 +27,9 @@ class TicketService
             ->when($filters['priority'] ?? null, fn ($query, $priority) => $query->where('priority', $priority))
             ->when($filters['category_id'] ?? null, fn ($query, $categoryId) => $query->where('category_id', $categoryId));
 
-        if ($user->role?->slug !== 'admin') {
+        if ($user->role?->slug === 'requester') {
+            $query->where('requester_id', $user->id);
+        } elseif ($user->role?->slug !== 'admin') {
             $query->whereIn('team_id', $user->teams()->select('teams.id'));
         }
 
@@ -49,7 +52,7 @@ class TicketService
         $priority = $data['priority'] ?? 'medium';
         $deadlines = $this->ticketSlaService->deadlinesFor($priority);
 
-        return Ticket::query()->create([
+        $ticket = Ticket::query()->create([
             'title' => $data['title'],
             'description' => $data['description'],
             'priority' => $priority,
@@ -58,7 +61,13 @@ class TicketService
             'team_id' => $category->team_id,
             'requester_id' => $requester->id,
             ...$deadlines,
-        ])->load(['category', 'team', 'assignee']);
+        ]);
+
+        if (config('ai.ticket_hints.enabled')) {
+            GenerateTicketHintJob::dispatch($ticket->id);
+        }
+
+        return $ticket->load(['category', 'team', 'assignee']);
     }
 
     public function assume(Ticket $ticket, User $agent): Ticket

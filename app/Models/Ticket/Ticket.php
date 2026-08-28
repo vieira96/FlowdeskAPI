@@ -2,6 +2,7 @@
 
 namespace App\Models\Ticket;
 
+use App\Models\Ai\TicketAiSuggestion;
 use App\Models\Team\Team;
 use App\Models\Team\TeamCategory;
 use App\Models\User;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'title',
@@ -62,5 +64,10 @@ class Ticket extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(TicketComment::class)->latest();
+    }
+
+    public function aiSuggestion(): HasOne
+    {
+        return $this->hasOne(TicketAiSuggestion::class);
     }
 }

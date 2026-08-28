@@ -19,6 +19,11 @@ docker compose down
 export LOCAL_UID="$(id -u)"
 export LOCAL_GID="$(id -g)"
 
+run_bootstrap() {
+    docker rm -f flowdesk-app-bootstrap >/dev/null 2>&1 || true
+    docker compose run --rm --name flowdesk-app-bootstrap app "$@"
+}
+
 echo "Construindo a imagem PHP..."
 docker compose build app queue reverb
 
@@ -41,16 +46,23 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "Instalando as dependências PHP..."
-docker compose run --rm --name flowdesk-app-bootstrap app composer install --no-interaction --prefer-dist
+run_bootstrap composer install --no-interaction --prefer-dist
 
 echo "Configurando a aplicação..."
 if ! grep -q '^APP_KEY=base64:' .env; then
-    docker compose run --rm --name flowdesk-app-bootstrap app php artisan key:generate --force
+    run_bootstrap php artisan key:generate --force
 fi
-docker compose run --rm --name flowdesk-app-bootstrap app php artisan migrate --force
+run_bootstrap php artisan migrate --force
 
-echo "Iniciando a aplicação, fila e WebSocket..."
-docker compose up -d app queue reverb
+ai_model="$(grep '^AI_OLLAMA_MODEL=' .env | cut -d= -f2- || true)"
+ai_model="${ai_model:-qwen3:4b}"
+
+echo "Iniciando o serviço de IA e baixando o modelo ${ai_model}..."
+docker compose up -d ollama
+docker compose exec -T ollama ollama pull "$ai_model"
+
+echo "Iniciando a aplicação, fila, WebSocket e IA..."
+docker compose up -d app queue reverb ollama
 
 echo
 echo "Projeto pronto em http://localhost:8000"

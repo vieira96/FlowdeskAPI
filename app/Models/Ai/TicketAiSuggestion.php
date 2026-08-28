@@ -1,32 +1,37 @@
 <?php
 
-namespace App\Models\Ticket;
+namespace App\Models\Ai;
 
-use App\Models\User;
+use App\Models\Ticket\Ticket;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['ticket_id', 'user_id', 'source', 'metadata', 'body'])]
-class TicketComment extends Model
+#[Fillable([
+    'ticket_id',
+    'status',
+    'classification',
+    'confidence',
+    'suggestion',
+    'model',
+    'failure_reason',
+    'generated_at',
+])]
+class TicketAiSuggestion extends Model
 {
     use HasUuids;
 
     protected function casts(): array
     {
         return [
-            'metadata' => 'array',
+            'confidence' => 'float',
+            'generated_at' => 'immutable_datetime',
         ];
     }
 
     public function ticket(): BelongsTo
     {
         return $this->belongsTo(Ticket::class);
-    }
-
-    public function author(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'user_id');
     }
 }

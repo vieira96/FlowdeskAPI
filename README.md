@@ -1,6 +1,6 @@
 # Flowdesk
 
-API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento. Não há interface web: o consumo é feito pela API, OpenAPI e collection do Postman.
+API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento, com IA local para orientar o solicitante em ocorrências simples antes do atendimento humano. Não há interface web: o consumo é feito pela API, OpenAPI e collection do Postman.
 
 Não é um SaaS: todos os usuários pertencem à mesma instalação.
 
@@ -13,6 +13,7 @@ Não é um SaaS: todos os usuários pertencem à mesma instalação.
 - Abertura de tickets por solicitantes.
 - Atendimento: assumir ticket, comentar, resolver e fechar.
 - SLA por prioridade, com prazo de primeira resposta e resolução.
+- Assistente de IA local que oferece orientações de autoatendimento claras para casos simples, reduzindo chamados repetitivos sem substituir o suporte humano.
 - Notificações persistidas no banco e entregues em tempo real via WebSocket.
 - Controle de acesso com Policies.
 - OpenAPI, collection do Postman e testes automatizados.
@@ -39,7 +40,7 @@ O frontend não informa a equipe do ticket. O backend busca a equipe pela catego
 | --- | --- |
 | Criar equipe, categoria e vínculo de agente | Admin |
 | Abrir ticket | Requester |
-| Listar tickets | Admin ou agente da equipe responsável |
+| Listar tickets | Admin, agente da equipe responsável ou solicitante (somente os próprios) |
 | Assumir ticket | Agente da equipe responsável |
 | Comentar, resolver ou fechar | Agente que assumiu o ticket |
 
@@ -101,6 +102,34 @@ Os prazos são calculados em horas corridas no momento de abertura do ticket. A 
 | `medium` | 4 horas | 24 horas |
 | `high` | 1 hora | 8 horas |
 | `urgent` | 30 minutos | 4 horas |
+
+## IA local para autoatendimento
+
+O projeto usa Ollama em Docker e o modelo aberto `qwen3:4b` para tornar o suporte mais acessível desde a abertura do chamado. A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
+
+A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Isso ajuda o solicitante a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
+
+Chamados que mencionam senha, credenciais, token, vazamento, malware ou segurança não são enviados ao modelo e seguem para atendimento humano.
+
+O `boot-project-linux.sh` baixa o modelo e ativa a funcionalidade em uma instalação nova. Se for necessário instalar ou restaurar o modelo manualmente:
+
+```bash
+docker compose exec ollama ollama pull qwen3:4b
+```
+
+Em seguida, altere no `.env`:
+
+```dotenv
+AI_TICKET_HINTS_ENABLED=true
+```
+
+E reinicie a API e a fila:
+
+```bash
+docker compose restart app queue
+```
+
+O Ollama está disponível apenas na máquina local em `http://localhost:11434`. Em máquinas sem GPU o modelo funciona, mas a resposta pode demorar mais.
 
 ## Rodando localmente
 
@@ -193,8 +222,9 @@ docker compose exec app php artisan test
 
 ## Próximos passos
 
+- Notificar o solicitante pelo banco e WebSocket quando a IA publicar uma orientação no ticket.
 - Criar automações de escalonamento para tickets próximos do vencimento.
 - Registrar histórico e auditoria de alterações do chamado.
 - Permitir anexos em tickets e comentários.
 - Criar regras de prioridade e direcionamento automático por categoria.
-- Adicionar IA para sugerir categoria, equipe responsável e prioridade com base no texto do chamado.
+- Ampliar a IA para sugerir categoria, equipe responsável e prioridade com base no texto do chamado.

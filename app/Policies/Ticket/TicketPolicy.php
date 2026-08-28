@@ -14,13 +14,17 @@ class TicketPolicy
 
     public function viewAny(User $user): bool
     {
-        return in_array($user->role?->slug, ['admin', 'agent'], true);
+        return in_array($user->role?->slug, ['admin', 'agent', 'requester'], true);
     }
 
     public function view(User $user, Ticket $ticket): bool
     {
         if ($user->role?->slug === 'admin') {
             return true;
+        }
+
+        if ($user->role?->slug === 'requester') {
+            return $ticket->requester_id === $user->id;
         }
 
         return $user->role?->slug === 'agent'
