@@ -1,0 +1,6 @@
+.git
+.agents
+.codex
+vendor
+node_modules
+storage/logs
