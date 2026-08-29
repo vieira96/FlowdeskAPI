@@ -7,10 +7,13 @@ use App\Models\Ai\TicketAiSuggestion;
 use App\Models\Team\TeamCategory;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
+use App\Notifications\Ticket\TicketActivityNotification;
 use App\Services\Ai\TicketHintService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Notifications\Events\BroadcastNotificationCreated;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -39,6 +42,7 @@ class TicketHintTest extends TestCase
     public function test_ai_creates_a_labeled_comment_only_for_a_high_confidence_simple_ticket(): void
     {
         config()->set('ai.ticket_hints.enabled', true);
+        Event::fake([BroadcastNotificationCreated::class]);
         Http::fake([
             'http://ollama:11434/api/chat' => Http::response([
                 'message' => [
@@ -72,6 +76,15 @@ class TicketHintTest extends TestCase
             'source' => 'ai',
             'user_id' => null,
         ]);
+        $this->assertDatabaseHas('notifications', [
+            'notifiable_id' => $ticket->requester_id,
+            'type' => TicketActivityNotification::class,
+        ]);
+        $this->assertSame(
+            'ticket.ai_hint_published',
+            $ticket->requester->notifications()->latest()->firstOrFail()->data['event'],
+        );
+        Event::assertDispatched(BroadcastNotificationCreated::class);
 
         $suggestion = TicketAiSuggestion::query()->where('ticket_id', $ticket->id)->firstOrFail();
         $this->assertSame(0.92, $suggestion->confidence);
@@ -107,6 +120,10 @@ class TicketHintTest extends TestCase
         $this->assertDatabaseMissing('ticket_comments', [
             'ticket_id' => $ticket->id,
             'source' => 'ai',
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'notifiable_id' => $ticket->requester_id,
+            'type' => TicketActivityNotification::class,
         ]);
     }
 

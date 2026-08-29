@@ -107,7 +107,7 @@ Os prazos são calculados em horas corridas no momento de abertura do ticket. A 
 
 O projeto usa Ollama em Docker e o modelo aberto `qwen3:4b` para tornar o suporte mais acessível desde a abertura do chamado. A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
 
-A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Isso ajuda o solicitante a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
+A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Quando uma orientação é publicada, o solicitante recebe uma notificação persistida no banco e entregue em tempo real pelo WebSocket. Isso ajuda a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
 
 Chamados que mencionam senha, credenciais, token, vazamento, malware ou segurança não são enviados ao modelo e seguem para atendimento humano.
 
@@ -212,7 +212,7 @@ O evento `pusher_internal:subscription_succeeded` confirma a inscrição. Ao ass
 
 ## Postman
 
-Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json). A collection já faz login, cria dados de teste, passa pelo fluxo de atendimento e prepara a autorização do canal privado de notificações. A conexão WebSocket deve ser criada pelo menu `New > WebSocket` do Postman, pois ele não permite misturar requisições HTTP e WebSocket na mesma collection.
+Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.json). A collection já faz login, cria dados de teste, passa pelo fluxo de atendimento e prepara a autorização do canal privado de notificações. A conexão WebSocket deve ser criada e salva pelo menu `New > WebSocket` do Postman, pois requests WebSocket nativos não usam o mesmo formato importável das collections HTTP.
 
 ## Testes
 
@@ -222,7 +222,6 @@ docker compose exec app php artisan test
 
 ## Próximos passos
 
-- Notificar o solicitante pelo banco e WebSocket quando a IA publicar uma orientação no ticket.
 - Criar automações de escalonamento para tickets próximos do vencimento.
 - Registrar histórico e auditoria de alterações do chamado.
 - Permitir anexos em tickets e comentários.

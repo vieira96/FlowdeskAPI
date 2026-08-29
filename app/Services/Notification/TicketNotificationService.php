@@ -30,4 +30,13 @@ class TicketNotificationService
             message: $message,
         ));
     }
+
+    public function notifyAiHintPublished(Ticket $ticket): void
+    {
+        $ticket->requester->notify(new TicketActivityNotification(
+            ticket: $ticket,
+            event: 'ticket.ai_hint_published',
+            message: 'O Assistente IA deixou uma orientação no seu ticket.',
+        ));
+    }
 }

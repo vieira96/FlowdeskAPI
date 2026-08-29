@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use App\Models\Ai\TicketAiSuggestion;
 use App\Models\Ticket\Ticket;
 use App\Models\Ticket\TicketComment;
+use App\Services\Notification\TicketNotificationService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -23,6 +24,8 @@ class TicketHintService
         'malware',
         'ransomware',
     ];
+
+    public function __construct(private readonly TicketNotificationService $ticketNotificationService) {}
 
     public function generateFor(Ticket $ticket): void
     {
@@ -86,6 +89,9 @@ class TicketHintService
             ],
             'body' => "Dica automática do Assistente IA:\n\n{$analysis['suggestion']}",
         ]);
+
+        $ticket->loadMissing('requester');
+        $this->ticketNotificationService->notifyAiHintPublished($ticket);
     }
 
     /** @return array{classification: string, confidence: float, suggestion: string} */
