@@ -56,6 +56,24 @@ class TeamTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_an_administrator_can_list_teams(): void
+    {
+        $administrator = User::query()->where('email', 'admin@admin.com')->firstOrFail();
+
+        $this->withToken($administrator->createToken('test')->plainTextToken)
+            ->getJson('/api/v1/teams')
+            ->assertOk();
+    }
+
+    public function test_a_requester_cannot_list_teams(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->getJson('/api/v1/teams')
+            ->assertForbidden();
+    }
+
     public function test_a_requester_cannot_be_attached_as_an_agent(): void
     {
         $administrator = User::query()->where('email', 'admin@admin.com')->firstOrFail();

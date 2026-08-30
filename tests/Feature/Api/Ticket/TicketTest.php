@@ -43,6 +43,7 @@ class TicketTest extends TestCase
 
     public function test_sla_deadlines_are_calculated_from_ticket_priority(): void
     {
+        config()->set('ai.ticket_hints.enabled', false);
         $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
         $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
         $startedAt = CarbonImmutable::parse('2026-08-28 10:00:00', 'UTC');
@@ -68,6 +69,28 @@ class TicketTest extends TestCase
         } finally {
             $this->travelBack();
         }
+    }
+
+    public function test_sla_is_not_started_while_ticket_is_awaiting_ai_triage(): void
+    {
+        config()->set('ai.ticket_hints.enabled', true);
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
+
+        $response = $this->withToken($requester->createToken('test')->plainTextToken)
+            ->postJson('/api/v1/tickets', [
+                'title' => 'Impressora sem papel',
+                'description' => 'A impressora informa que está sem papel.',
+                'category_id' => $category->id,
+                'priority' => 'high',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.sla.first_response_due_at', null)
+            ->assertJsonPath('data.sla.resolution_due_at', null);
+
+        $ticket = Ticket::query()->findOrFail($response->json('data.id'));
+        $this->assertNull($ticket->first_response_due_at);
+        $this->assertNull($ticket->resolution_due_at);
     }
 
     public function test_the_payload_cannot_override_the_team_derived_from_the_category(): void
@@ -282,6 +305,30 @@ class TicketTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.body', 'Estou verificando o equipamento.')
             ->assertJsonPath('data.author.id', $agent->id);
+    }
+
+    public function test_requester_can_comment_on_own_ticket(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->postJson("/api/v1/tickets/{$ticket->id}/comments", ['body' => 'Ainda preciso de ajuda com a impressora.'])
+            ->assertCreated()
+            ->assertJsonPath('data.body', 'Ainda preciso de ajuda com a impressora.')
+            ->assertJsonPath('data.source', 'requester')
+            ->assertJsonPath('data.author.id', $requester->id);
+    }
+
+    public function test_requester_cannot_comment_on_another_requesters_ticket(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $otherRequester = User::factory()->create(['role_id' => $requester->role_id]);
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $otherRequester);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->postJson("/api/v1/tickets/{$ticket->id}/comments", ['body' => 'Tentativa indevida.'])
+            ->assertForbidden();
     }
 
     public function test_an_agent_cannot_skip_the_status_transition_flow(): void

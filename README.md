@@ -25,9 +25,17 @@ Solicitante abre o chamado e escolhe uma categoria
                  ↓
 A categoria informa qual equipe atende aquele assunto
                  ↓
-O ticket é criado para a equipe com status open
+O ticket é criado para a equipe com status open e passa pela triagem da IA
                  ↓
-Um agente daquela equipe assume o ticket
+IA publica orientação? ── não → equipe é notificada e o SLA começa
+                 │
+                sim
+                 ↓
+Solicitante tenta a orientação ou clica em Solicitar ajuda humana
+                 ↓
+Equipe é notificada e o SLA começa
+                 ↓
+Um agente da equipe assume o ticket
                  ↓
 in_progress → resolved → closed
 ```
@@ -38,10 +46,12 @@ O frontend não informa a equipe do ticket. O backend busca a equipe pela catego
 
 | Ação | Quem pode executar |
 | --- | --- |
-| Criar equipe, categoria e vínculo de agente | Admin |
+| Listar ou criar equipe e vínculo de agente | Admin |
+| Criar categoria | Admin |
 | Abrir ticket | Requester |
 | Listar tickets | Admin, agente da equipe responsável ou solicitante (somente os próprios) |
 | Assumir ticket | Agente da equipe responsável |
+| Comentar no próprio ticket | Requester |
 | Comentar, resolver ou fechar | Agente que assumiu o ticket |
 
 As regras ficam em `TicketPolicy`. A listagem dos agentes também é filtrada no banco pelo vínculo em `team_members`.
@@ -56,9 +66,9 @@ app/
 │   ├── Controllers/Api/{Auth,Notification,Team,Ticket}
 │   ├── Requests/Api/{Auth,Team,Ticket}
 │   └── Resources/Api/{Auth,Notification,Team,Ticket}
-├── Models/{Access,Team,Ticket}
+├── Models/{Access,Ai,Team,Ticket}
 ├── Policies/Ticket
-├── Services/{Auth,Notification,Team,Ticket}
+├── Services/{Ai,Auth,Notification,Sla,Team,Ticket}
 └── Notifications/Ticket
 
 routes/api/
@@ -94,7 +104,7 @@ As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais fr
 
 ## SLA
 
-Os prazos são calculados em horas corridas no momento de abertura do ticket. A primeira resposta é registrada quando um agente assume o chamado e a resolução quando o status passa para `resolved`.
+Os prazos são calculados em horas corridas quando o atendimento humano é necessário: imediatamente quando a IA não publica uma orientação ou quando o solicitante pede ajuda humana após receber um hint. A primeira resposta é registrada quando um agente assume o chamado e a resolução quando o status passa para `resolved`.
 
 | Prioridade | Primeira resposta | Resolução |
 | --- | --- | --- |
@@ -110,6 +120,12 @@ O projeto prioriza a API da Groq, usando o modelo `openai/gpt-oss-20b`, para ofe
 A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
 
 A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Quando uma orientação é publicada, o solicitante recebe uma notificação persistida no banco e entregue em tempo real pelo WebSocket. Isso ajuda a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
+
+Quando a IA não publica uma orientação — por classificar o caso como complexo, sensível ou por não conseguir concluir a análise — todos os agentes da equipe responsável recebem uma notificação persistida e em tempo real. Quando a orientação é publicada, a equipe aguarda o solicitante clicar em **Solicitar ajuda humana**; essa ação chama `POST /api/v1/tickets/{id}/request-human-assistance` e então notifica a equipe uma única vez.
+
+### Observabilidade da IA
+
+Falhas da triagem são registradas no log da aplicação com UUID do ticket, provedor, modelo e tipo da exceção. Quando a Groq retorna `HTTP 429`, o log registra o limite atingido e o acionamento do fallback para Ollama. As chaves de API e o conteúdo do chamado não são incluídos nesses logs.
 
 Chamados que mencionam senha, credenciais, token, vazamento, malware ou segurança não são enviados ao modelo e seguem para atendimento humano.
 
@@ -174,12 +190,14 @@ Endpoints principais:
 | Método | Endpoint |
 | --- | --- |
 | `POST` | `/api/v1/auth/login` |
-| `GET`, `POST` | `/api/v1/teams` |
-| `GET`, `POST` | `/api/v1/teams/categories` |
+| `GET`, `POST` | `/api/v1/teams` — Admin |
+| `GET` | `/api/v1/teams/categories` |
+| `POST` | `/api/v1/teams/categories` — Admin |
 | `POST` | `/api/v1/teams/{id}/agents` |
 | `GET`, `POST` | `/api/v1/tickets` |
 | `GET` | `/api/v1/tickets/{id}` |
 | `POST` | `/api/v1/tickets/{id}/assume` |
+| `POST` | `/api/v1/tickets/{id}/request-human-assistance` |
 | `PATCH` | `/api/v1/tickets/{id}/status` |
 | `POST` | `/api/v1/tickets/{id}/comments` |
 | `GET` | `/api/v1/notifications` |
@@ -187,7 +205,7 @@ Endpoints principais:
 
 ## Notificações em tempo real
 
-Ao assumir, resolver ou fechar um ticket, o solicitante recebe uma notificação persistida na tabela `notifications`. A API permite listar as notificações e marcá-las como lidas.
+Ao assumir, resolver ou fechar um ticket, o solicitante recebe uma notificação persistida na tabela `notifications`. Quando a IA não publica um hint ou quando o solicitante pede ajuda humana, os agentes da equipe responsável recebem a notificação. A API permite listar as notificações e marcá-las como lidas.
 
 O mesmo evento é entregue em tempo real pelo Laravel Reverb, através do canal privado `App.Models.User.{userId}`. Localmente, o servidor WebSocket fica em `ws://localhost:8080`; a autenticação do canal usa o token Sanctum no endpoint `POST /api/broadcasting/auth`. O ambiente local aceita qualquer origem para permitir testes pelo Postman. Em produção, `REVERB_ALLOWED_ORIGINS` deve conter apenas os domínios autorizados.
 
@@ -224,6 +242,8 @@ Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.j
 ```bash
 docker compose exec app php artisan test
 ```
+
+Os testes de feature cobrem autenticação, isolamento de banco, equipes, categorias, tickets, SLA, IA, notificações e solicitação de ajuda humana.
 
 ## Próximos passos
 

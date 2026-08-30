@@ -25,6 +25,7 @@ class TicketResource extends JsonResource
             ],
             'requester_id' => $this->requester_id,
             'assignee_id' => $this->assignee_id,
+            'human_assistance_requested_at' => $this->human_assistance_requested_at?->toISOString(),
             'assignee' => $this->whenLoaded('assignee', fn () => $this->assignee === null ? null : [
                 'id' => $this->assignee->id,
                 'name' => $this->assignee->name,

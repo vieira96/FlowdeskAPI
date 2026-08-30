@@ -50,7 +50,9 @@ class TicketService
         }
 
         $priority = $data['priority'] ?? 'medium';
-        $deadlines = $this->ticketSlaService->deadlinesFor($priority);
+        $deadlines = config('ai.ticket_hints.enabled')
+            ? []
+            : $this->ticketSlaService->deadlinesFor($priority);
 
         $ticket = Ticket::query()->create([
             'title' => $data['title'],
@@ -65,6 +67,9 @@ class TicketService
 
         if (config('ai.ticket_hints.enabled')) {
             GenerateTicketHintJob::dispatch($ticket->id);
+        } else {
+            $ticket->load('team.agents');
+            $this->ticketNotificationService->notifyTeamForNewTicket($ticket);
         }
 
         return $ticket->load(['category', 'team', 'assignee']);
@@ -96,6 +101,28 @@ class TicketService
         return $ticket;
     }
 
+    public function requestHumanAssistance(Ticket $ticket): Ticket
+    {
+        if ($ticket->human_assistance_requested_at !== null) {
+            return $ticket;
+        }
+
+        if ($ticket->aiSuggestion?->status !== 'published') {
+            throw ValidationException::withMessages([
+                'ticket' => 'A ajuda humana só pode ser solicitada após a orientação da IA.',
+            ]);
+        }
+
+        $ticket->update([
+            'human_assistance_requested_at' => now(),
+            ...$this->ticketSlaService->deadlinesFor($ticket->priority),
+        ]);
+        $ticket->load(['category', 'team.agents', 'assignee']);
+        $this->ticketNotificationService->notifyTeamForHumanAssistance($ticket);
+
+        return $ticket;
+    }
+
     public function changeStatus(Ticket $ticket, string $status): Ticket
     {
         $transitions = [
@@ -120,11 +147,12 @@ class TicketService
         return $ticket;
     }
 
-    public function addComment(Ticket $ticket, User $agent, string $body): TicketComment
+    public function addComment(Ticket $ticket, User $user, string $body): TicketComment
     {
         return TicketComment::query()->create([
             'ticket_id' => $ticket->id,
-            'user_id' => $agent->id,
+            'user_id' => $user->id,
+            'source' => $user->role?->slug === 'requester' ? 'requester' : 'agent',
             'body' => $body,
         ])->load('author');
     }

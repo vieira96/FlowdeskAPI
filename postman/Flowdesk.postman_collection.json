@@ -138,17 +138,17 @@
             "body": { "mode": "raw", "raw": "{\n  \"team_id\": \"{{team_id}}\",\n  \"name\": \"Categoria de teste {{$randomUUID}}\",\n  \"description\": \"Categoria criada pela collection Postman.\"\n}" },
             "url": "{{base_url}}/api/v1/teams/categories"
           }
-        }
-          ]
         },
         {
           "name": "Listar equipes",
-          "description": "Disponível para qualquer usuário autenticado.",
+          "description": "Disponível somente para administradores.",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }],
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{admin_token}}" }],
             "url": "{{base_url}}/api/v1/teams"
           }
+        }
+          ]
         },
         {
           "name": "Listar categorias",
@@ -169,7 +169,9 @@
           "item": [
             { "name": "Criar ticket", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Ticket criado', () => pm.response.to.have.status(201));", "const ticket = pm.response.json().data;", "pm.collectionVariables.set('ticket_id', ticket.id);", "pm.test('Ticket foi direcionado para a equipe criada', () => pm.expect(ticket.team.id).to.eql(pm.collectionVariables.get('team_id')));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Falha de teste {{$randomUUID}}\",\n  \"description\": \"Ticket de demonstração criado pela collection Postman.\",\n  \"category_id\": \"{{category_id}}\",\n  \"priority\": \"high\"\n}" }, "url": "{{base_url}}/api/v1/tickets" } },
             { "name": "Listar os próprios tickets", "description": "Retorna apenas os tickets criados pelo solicitante autenticado.", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Solicitante listou seus tickets', () => pm.response.to.have.status(200));", "const tickets = pm.response.json().data;", "pm.test('Não há ticket de outro solicitante na resposta', () => pm.expect(tickets.every(ticket => ticket.requester_id === pm.collectionVariables.get('requester_id'))).to.be.true);"] } }], "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "url": "{{base_url}}/api/v1/tickets" } },
-            { "name": "Consultar o próprio ticket", "description": "A resposta inclui o campo ai quando a análise assíncrona for concluída.", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Solicitante consultou o próprio ticket', () => pm.response.to.have.status(200));", "pm.test('Ticket consultado é o ticket criado', () => pm.expect(pm.response.json().data.id).to.eql(pm.collectionVariables.get('ticket_id')));"] } }], "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}" } }
+            { "name": "Consultar o próprio ticket", "description": "A resposta inclui o campo ai quando a análise assíncrona for concluída. Aguarde ai.status=published antes de solicitar atendimento humano.", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Solicitante consultou o próprio ticket', () => pm.response.to.have.status(200));", "pm.test('Ticket consultado é o ticket criado', () => pm.expect(pm.response.json().data.id).to.eql(pm.collectionVariables.get('ticket_id')));"] } }], "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}" } },
+            { "name": "Solicitar ajuda humana", "description": "Use após a IA publicar uma orientação. Inicia o SLA e notifica todos os agentes da equipe responsável uma única vez.", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Solicitação de ajuda humana registrada', () => pm.response.to.have.status(200));", "const ticket = pm.response.json().data;", "pm.test('SLA foi iniciado', () => pm.expect(ticket.sla.first_response_due_at).to.not.eql(null));", "pm.test('Pedido de ajuda humana foi registrado', () => pm.expect(ticket.human_assistance_requested_at).to.not.eql(null));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/request-human-assistance" } },
+            { "name": "Adicionar comentário no próprio ticket", "description": "O solicitante pode comentar somente no ticket que abriu.", "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Comentário do solicitante criado', () => pm.response.to.have.status(201));", "pm.test('Autor é o solicitante', () => pm.expect(pm.response.json().data.source).to.eql('requester'));"] } }], "request": { "method": "POST", "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{requester_token}}" }], "body": { "mode": "raw", "raw": "{\n  \"body\": \"A orientação não resolveu o problema.\"\n}" }, "url": "{{base_url}}/api/v1/tickets/{{ticket_id}}/comments" } }
           ]
         },
         {

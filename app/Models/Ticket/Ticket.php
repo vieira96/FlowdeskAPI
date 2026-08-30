@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'first_responded_at',
     'resolution_due_at',
     'resolved_at',
+    'human_assistance_requested_at',
 ])]
 class Ticket extends Model
 {
@@ -38,6 +39,7 @@ class Ticket extends Model
             'first_responded_at' => 'immutable_datetime',
             'resolution_due_at' => 'immutable_datetime',
             'resolved_at' => 'immutable_datetime',
+            'human_assistance_requested_at' => 'immutable_datetime',
         ];
     }
 

@@ -43,7 +43,16 @@ class TicketPolicy
 
     public function comment(User $user, Ticket $ticket): bool
     {
+        if ($user->role?->slug === 'requester') {
+            return $ticket->requester_id === $user->id;
+        }
+
         return $this->updateStatus($user, $ticket);
+    }
+
+    public function requestHumanAssistance(User $user, Ticket $ticket): bool
+    {
+        return $user->role?->slug === 'requester' && $ticket->requester_id === $user->id;
     }
 
     private function isAgentFromTicketTeam(User $user, Ticket $ticket): bool

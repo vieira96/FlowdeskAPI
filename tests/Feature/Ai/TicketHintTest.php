@@ -5,6 +5,7 @@ namespace Tests\Feature\Ai;
 use App\Jobs\Ai\GenerateTicketHintJob;
 use App\Models\Ai\TicketAiSuggestion;
 use App\Models\Team\TeamCategory;
+use App\Models\Team\TeamMember;
 use App\Models\Ticket\Ticket;
 use App\Models\User;
 use App\Notifications\Ticket\TicketActivityNotification;
@@ -15,11 +16,19 @@ use Illuminate\Notifications\Events\BroadcastNotificationCreated;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class TicketHintTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('ai.ticket_hints.groq.api_key', null);
+    }
 
     public function test_ticket_creation_queues_ai_triage_when_enabled(): void
     {
@@ -71,11 +80,7 @@ class TicketHintTest extends TestCase
             'status' => 'published',
             'classification' => 'simple',
         ]);
-        $this->assertDatabaseHas('ticket_comments', [
-            'ticket_id' => $ticket->id,
-            'source' => 'ai',
-            'user_id' => null,
-        ]);
+        $this->assertDatabaseMissing('ticket_comments', ['ticket_id' => $ticket->id]);
         $this->assertDatabaseHas('notifications', [
             'notifiable_id' => $ticket->requester_id,
             'type' => TicketActivityNotification::class,
@@ -100,8 +105,7 @@ class TicketHintTest extends TestCase
             ->assertJsonPath('data.ai.confidence', 0.92)
             ->assertJsonPath('data.ai.suggestion', 'Verifique se há papel na bandeja e se a impressora está online.')
             ->assertJsonMissingPath('data.ai.model')
-            ->assertJsonPath('data.comments.0.source', 'ai')
-            ->assertJsonPath('data.comments.0.author.name', 'Assistente IA');
+            ->assertJsonCount(0, 'data.comments');
     }
 
     public function test_sensitive_ticket_is_not_sent_to_the_ai_or_published_as_a_hint(): void
@@ -117,14 +121,34 @@ class TicketHintTest extends TestCase
             'status' => 'skipped',
             'classification' => 'unsafe',
         ]);
-        $this->assertDatabaseMissing('ticket_comments', [
-            'ticket_id' => $ticket->id,
-            'source' => 'ai',
-        ]);
+        $this->assertDatabaseMissing('ticket_comments', ['ticket_id' => $ticket->id]);
         $this->assertDatabaseMissing('notifications', [
             'notifiable_id' => $ticket->requester_id,
             'type' => TicketActivityNotification::class,
         ]);
+    }
+
+    public function test_team_agents_are_notified_when_ai_does_not_publish_a_hint(): void
+    {
+        config()->set('ai.ticket_hints.enabled', true);
+        Http::fake([
+            'http://ollama:11434/api/chat' => Http::response([
+                'message' => ['content' => json_encode([
+                    'classification' => 'complex',
+                    'confidence' => 0.95,
+                    'suggestion' => '',
+                ], JSON_THROW_ON_ERROR)],
+            ]),
+        ]);
+        $ticket = $this->createTicket('Servidor indisponível', 'O sistema inteiro ficou indisponível para todos os usuários.');
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        TeamMember::query()->create(['team_id' => $ticket->team_id, 'user_id' => $agent->id]);
+
+        app(TicketHintService::class)->generateFor($ticket);
+
+        $notification = $agent->notifications()->latest()->firstOrFail();
+        $this->assertSame('ticket.created_without_ai_hint', $notification->data['event']);
+        $this->assertSame($ticket->id, $notification->data['ticket']['id']);
     }
 
     public function test_it_uses_groq_when_an_api_key_is_configured(): void
@@ -155,6 +179,7 @@ class TicketHintTest extends TestCase
     public function test_it_falls_back_to_ollama_only_when_groq_rate_limit_is_reached(): void
     {
         config()->set('ai.ticket_hints.groq.api_key', 'groq-test-key');
+        Log::spy();
         Http::fake([
             'https://api.groq.com/openai/v1/chat/completions' => Http::response([], 429),
             'http://ollama:11434/api/chat' => Http::response([
@@ -170,10 +195,35 @@ class TicketHintTest extends TestCase
         app(TicketHintService::class)->generateFor($ticket);
 
         Http::assertSentCount(2);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Groq AI quota reached; using Ollama fallback.'
+                && $context['ticket_id'] === $ticket->id
+                && $context['http_status'] === 429
+                && $context['fallback_provider'] === 'ollama');
         $this->assertDatabaseHas('ticket_ai_suggestions', [
             'ticket_id' => $ticket->id,
             'status' => 'published',
             'model' => 'qwen3:4b',
+        ]);
+    }
+
+    public function test_it_logs_ai_generation_failures_without_ticket_content(): void
+    {
+        Log::spy();
+        Http::fake(['http://ollama:11434/api/chat' => Http::response([], 500)]);
+        $ticket = $this->createTicket('Impressora sem papel', 'Descrição que não deve ser registrada no log.');
+
+        app(TicketHintService::class)->generateFor($ticket);
+
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Ticket AI hint generation failed.'
+                && $context['ticket_id'] === $ticket->id
+                && $context['provider'] === 'ollama'
+                && ! array_key_exists('description', $context));
+        $this->assertDatabaseHas('ticket_ai_suggestions', [
+            'ticket_id' => $ticket->id,
+            'status' => 'failed',
         ]);
     }
 

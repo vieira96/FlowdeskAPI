@@ -45,6 +45,13 @@ class TicketController extends Controller
         return new TicketResource($this->ticketService->assume($ticket, $request->user()));
     }
 
+    public function requestHumanAssistance(Request $request, Ticket $ticket): TicketResource
+    {
+        abort_unless($request->user()?->can('requestHumanAssistance', $ticket), 403);
+
+        return new TicketResource($this->ticketService->requestHumanAssistance($ticket->load('aiSuggestion')));
+    }
+
     public function updateStatus(ChangeTicketStatusRequest $request, Ticket $ticket): TicketResource
     {
         return new TicketResource($this->ticketService->changeStatus($ticket, $request->validated('status')));

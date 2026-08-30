@@ -3,6 +3,7 @@
 namespace App\Services\Ai;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 
 class TicketHintAiGateway
@@ -12,7 +13,7 @@ class TicketHintAiGateway
      * @param  array<string, mixed>  $schema
      * @return array{content: string, model: string}
      */
-    public function generate(array $messages, array $schema): array
+    public function generate(array $messages, array $schema, ?string $ticketId = null): array
     {
         if ($this->groqIsConfigured()) {
             $response = Http::acceptJson()
@@ -40,6 +41,14 @@ class TicketHintAiGateway
                     'model' => config('ai.ticket_hints.groq.model'),
                 ];
             }
+
+            Log::warning('Groq AI quota reached; using Ollama fallback.', [
+                'ticket_id' => $ticketId,
+                'provider' => 'groq',
+                'model' => config('ai.ticket_hints.groq.model'),
+                'http_status' => 429,
+                'fallback_provider' => 'ollama',
+            ]);
         }
 
         $response = Http::acceptJson()

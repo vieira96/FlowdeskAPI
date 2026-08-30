@@ -8,6 +8,7 @@ Route::middleware('auth:sanctum')->prefix('v1/tickets')->controller(TicketContro
     Route::post('/', 'store');
     Route::get('{ticket}', 'show');
     Route::post('{ticket}/assume', 'assume');
+    Route::post('{ticket}/request-human-assistance', 'requestHumanAssistance');
     Route::patch('{ticket}/status', 'updateStatus');
     Route::post('{ticket}/comments', 'comment');
 });
