@@ -2,8 +2,6 @@
 
 API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento, com IA para orientar o solicitante em ocorrências simples antes do atendimento humano. Não há interface web: o consumo é feito pela API, OpenAPI e collection do Postman.
 
-Não é um SaaS: todos os usuários pertencem à mesma instalação.
-
 ## O que já existe
 
 - Login com Laravel Sanctum.

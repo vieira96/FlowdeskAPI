@@ -76,7 +76,7 @@ class TicketSlaEscalationService
                 return ['halfway_notifications' => $halfwayNotifications, 'automatic_assignments' => 0];
             }
 
-            if (! $this->recordEscalation($ticket, 'first_response_auto_assigned', ['agent_id' => $agent->id])) {
+            if (! $this->recordEscalation($ticket, 'first_response_auto_assigned')) {
                 return ['halfway_notifications' => $halfwayNotifications, 'automatic_assignments' => 0];
             }
 
@@ -97,12 +97,11 @@ class TicketSlaEscalationService
             ->first();
     }
 
-    /** @param array<string, mixed>|null $metadata */
-    private function recordEscalation(Ticket $ticket, string $type, ?array $metadata = null): bool
+    private function recordEscalation(Ticket $ticket, string $type): bool
     {
         $escalation = TicketSlaEscalation::query()->firstOrCreate(
             ['ticket_id' => $ticket->id, 'type' => $type],
-            ['metadata' => $metadata, 'triggered_at' => now()],
+            ['triggered_at' => now()],
         );
 
         return $escalation->wasRecentlyCreated;

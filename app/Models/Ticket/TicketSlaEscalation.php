@@ -14,10 +14,7 @@ class TicketSlaEscalation extends Model
 
     protected function casts(): array
     {
-        return [
-            'triggered_at' => 'immutable_datetime',
-            'metadata' => 'array',
-        ];
+        return ['triggered_at' => 'immutable_datetime'];
     }
 
     public function ticket(): BelongsTo
