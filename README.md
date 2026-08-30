@@ -113,7 +113,7 @@ Os prazos são calculados em horas corridas quando o atendimento humano é neces
 | `high` | 1 hora | 8 horas |
 | `urgent` | 30 minutos | 4 horas |
 
-O container `flowdesk-scheduler` executa o comando `tickets:escalate-sla` a cada minuto. O processamento é assíncrono e dividido por responsabilidade:
+O container `flowdesk-scheduler` executa o comando `tickets:escalate-sla` a cada 5 minutos. O processamento é assíncrono e dividido por responsabilidade:
 
 1. O comando somente envia `DispatchTicketSlaEscalationsJob` para a fila Redis.
 2. Esse job busca tickets elegíveis em lotes de 100 com `chunkById` e despacha `ProcessTicketSlaEscalationJob` para cada UUID encontrado.
