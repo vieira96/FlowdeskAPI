@@ -88,6 +88,8 @@ As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais fr
 - categorias por equipe e status ativo;
 - tickets por equipe/status, agente/status, solicitante/data e categoria/data;
 - tickets por status e vencimento de SLA para acompanhamento operacional;
+- histórico de atribuição por ticket, agente e equipe;
+- eventos de escalonamento de SLA por ticket e tipo;
 - comentários por ticket/data e autor/data.
 - notificações por usuário, leitura e data de criação.
 
@@ -112,6 +114,25 @@ Os prazos são calculados em horas corridas quando o atendimento humano é neces
 | `medium` | 4 horas | 24 horas |
 | `high` | 1 hora | 8 horas |
 | `urgent` | 30 minutos | 4 horas |
+
+O container `flowdesk-scheduler` executa o comando `tickets:escalate-sla` a cada minuto. O processamento é assíncrono e dividido por responsabilidade:
+
+1. O comando somente envia `DispatchTicketSlaEscalationsJob` para a fila Redis.
+2. Esse job busca tickets elegíveis em lotes de 100 com `chunkById` e despacha `ProcessTicketSlaEscalationJob` para cada UUID encontrado.
+3. O job individual recebe apenas o UUID, consulta o ticket novamente com bloqueio de banco e carrega `team.agents` para calcular a distribuição de carga e aplicar a regra de SLA.
+
+Isso evita consultas e notificações em massa no processo do agendador, evita dados desatualizados na fila e permite que cada ticket seja processado de forma independente. Para tickets humanos ainda sem responsável, ele aplica duas etapas na primeira resposta:
+
+1. Com 50% do prazo consumido, envia um alerta para todos os agentes da equipe responsável.
+2. Com 80% do prazo consumido (20% restante), atribui automaticamente o ticket ao agente daquela equipe com menos tickets ativos (`open` e `in_progress`). Em caso de empate, usa o UUID do agente para manter a escolha determinística.
+
+Cada alerta e atribuição é registrado uma única vez, e a atribuição — manual ou automática — gera histórico com ticket, agente, equipe, origem e horário. Quando a atribuição é automática, o agente selecionado recebe o evento `ticket.auto_assigned` e o solicitante recebe `ticket.assumed`, ambos persistidos no banco e enviados pelo WebSocket.
+
+Para executar a verificação manualmente:
+
+```bash
+docker compose exec app php artisan tickets:escalate-sla
+```
 
 ## IA para autoatendimento
 
@@ -164,7 +185,7 @@ cd <diretorio-do-projeto>
 ./boot-project-linux.sh
 ```
 
-O `boot-project-linux.sh` faz todo o bootstrap local: cria a imagem PHP, sobe MySQL, Redis, a fila e o servidor WebSocket, instala as dependências, cria o `.env`, gera a chave da aplicação, executa as migrations e inicia a API.
+O `boot-project-linux.sh` faz todo o bootstrap local: cria a imagem PHP, sobe MySQL, Redis, fila, agendador e servidor WebSocket, instala as dependências, cria o `.env`, gera a chave da aplicação, executa as migrations e inicia a API.
 
 API: [http://localhost:8000](http://localhost:8000)
 
@@ -243,11 +264,10 @@ Importe [Flowdesk.postman_collection.json](postman/Flowdesk.postman_collection.j
 docker compose exec app php artisan test
 ```
 
-Os testes de feature cobrem autenticação, isolamento de banco, equipes, categorias, tickets, SLA, IA, notificações e solicitação de ajuda humana.
+Os testes de feature cobrem autenticação, isolamento de banco, equipes, categorias, tickets, SLA, escalonamento automático, IA, notificações e solicitação de ajuda humana.
 
 ## Próximos passos
 
-- Criar automações de escalonamento para tickets próximos do vencimento.
 - Registrar histórico e auditoria de alterações do chamado.
 - Permitir anexos em tickets e comentários.
 - Criar regras de prioridade e direcionamento automático por categoria.

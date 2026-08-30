@@ -35,6 +35,23 @@ services:
       redis:
         condition: service_healthy
 
+  scheduler:
+    container_name: flowdesk-scheduler
+    build:
+      context: .
+    command: php artisan schedule:work
+    restart: unless-stopped
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - .:/var/www/html
+    environment:
+      REVERB_HOST: reverb
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   reverb:
     container_name: flowdesk-reverb
     build:

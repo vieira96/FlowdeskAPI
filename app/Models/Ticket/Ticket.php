@@ -72,4 +72,14 @@ class Ticket extends Model
     {
         return $this->hasOne(TicketAiSuggestion::class);
     }
+
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(TicketAssignment::class);
+    }
+
+    public function slaEscalations(): HasMany
+    {
+        return $this->hasMany(TicketSlaEscalation::class);
+    }
 }

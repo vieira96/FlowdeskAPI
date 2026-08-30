@@ -34,6 +34,30 @@ class TicketNotificationService
         ));
     }
 
+    public function notifyTeamForFirstResponseSlaHalfway(Ticket $ticket): void
+    {
+        $this->notifyTeam(
+            $ticket,
+            event: 'ticket.sla_first_response_halfway',
+            message: 'Este ticket está na metade do prazo para primeira resposta e ainda não foi assumido.',
+        );
+    }
+
+    public function notifyTicketAutomaticallyAssigned(Ticket $ticket): void
+    {
+        $ticket->assignee->notify(new TicketActivityNotification(
+            ticket: $ticket,
+            event: 'ticket.auto_assigned',
+            message: 'Este ticket foi atribuído automaticamente a você por proximidade do SLA.',
+        ));
+
+        $ticket->requester->notify(new TicketActivityNotification(
+            ticket: $ticket,
+            event: 'ticket.assumed',
+            message: 'Seu ticket foi assumido por um agente.',
+        ));
+    }
+
     public function notifyStatusChanged(Ticket $ticket): void
     {
         $message = match ($ticket->status) {

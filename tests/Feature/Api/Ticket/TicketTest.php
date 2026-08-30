@@ -244,6 +244,13 @@ class TicketTest extends TestCase
             ->assertJsonPath('data.assignee.name', $agent->name)
             ->assertJsonPath('data.status', 'in_progress');
 
+        $this->assertDatabaseHas('ticket_assignments', [
+            'ticket_id' => $ticket->id,
+            'agent_id' => $agent->id,
+            'team_id' => $team->id,
+            'source' => 'manual',
+        ]);
+
         $this->withToken($token)
             ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'resolved'])
             ->assertOk()

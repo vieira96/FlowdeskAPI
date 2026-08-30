@@ -5,11 +5,13 @@ namespace App\Services\Ticket;
 use App\Jobs\Ai\GenerateTicketHintJob;
 use App\Models\Team\TeamCategory;
 use App\Models\Ticket\Ticket;
+use App\Models\Ticket\TicketAssignment;
 use App\Models\Ticket\TicketComment;
 use App\Models\User;
 use App\Services\Notification\TicketNotificationService;
 use App\Services\Sla\TicketSlaService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TicketService
@@ -89,14 +91,16 @@ class TicketService
             ]);
         }
 
-        $ticket->update([
-            'assignee_id' => $agent->id,
-            'status' => 'in_progress',
-            'first_responded_at' => $this->ticketSlaService->firstResponseAt(),
-        ]);
-
-        $ticket->load(['category', 'team', 'assignee', 'requester']);
+        $ticket = $this->assign($ticket, $agent, 'manual');
         $this->ticketNotificationService->notifyTicketAssumed($ticket);
+
+        return $ticket;
+    }
+
+    public function autoAssign(Ticket $ticket, User $agent): Ticket
+    {
+        $ticket = $this->assign($ticket, $agent, 'automatic');
+        $this->ticketNotificationService->notifyTicketAutomaticallyAssigned($ticket);
 
         return $ticket;
     }
@@ -155,5 +159,26 @@ class TicketService
             'source' => $user->role?->slug === 'requester' ? 'requester' : 'agent',
             'body' => $body,
         ])->load('author');
+    }
+
+    private function assign(Ticket $ticket, User $agent, string $source): Ticket
+    {
+        return DB::transaction(function () use ($ticket, $agent, $source): Ticket {
+            $ticket->update([
+                'assignee_id' => $agent->id,
+                'status' => 'in_progress',
+                'first_responded_at' => $this->ticketSlaService->firstResponseAt(),
+            ]);
+
+            TicketAssignment::query()->create([
+                'ticket_id' => $ticket->id,
+                'agent_id' => $agent->id,
+                'team_id' => $ticket->team_id,
+                'source' => $source,
+                'assigned_at' => now(),
+            ]);
+
+            return $ticket->load(['category', 'team', 'assignee', 'requester']);
+        });
     }
 }
