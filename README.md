@@ -1,6 +1,6 @@
 # Flowdesk
 
-API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento, com IA local para orientar o solicitante em ocorrências simples antes do atendimento humano. Não há interface web: o consumo é feito pela API, OpenAPI e collection do Postman.
+API de gestão de chamados internos feita em Laravel. O projeto cobre abertura de chamado, direcionamento para equipe, atendimento por agente e encerramento, com IA para orientar o solicitante em ocorrências simples antes do atendimento humano. Não há interface web: o consumo é feito pela API, OpenAPI e collection do Postman.
 
 Não é um SaaS: todos os usuários pertencem à mesma instalação.
 
@@ -13,7 +13,7 @@ Não é um SaaS: todos os usuários pertencem à mesma instalação.
 - Abertura de tickets por solicitantes.
 - Atendimento: assumir ticket, comentar, resolver e fechar.
 - SLA por prioridade, com prazo de primeira resposta e resolução.
-- Assistente de IA local que oferece orientações de autoatendimento claras para casos simples, reduzindo chamados repetitivos sem substituir o suporte humano.
+- Assistente de IA com Groq e fallback local via Ollama para orientar casos simples, reduzindo chamados repetitivos sem substituir o suporte humano.
 - Notificações persistidas no banco e entregues em tempo real via WebSocket.
 - Controle de acesso com Policies.
 - OpenAPI, collection do Postman e testes automatizados.
@@ -103,9 +103,11 @@ Os prazos são calculados em horas corridas no momento de abertura do ticket. A 
 | `high` | 1 hora | 8 horas |
 | `urgent` | 30 minutos | 4 horas |
 
-## IA local para autoatendimento
+## IA para autoatendimento
 
-O projeto usa Ollama em Docker e o modelo aberto `qwen3:4b` para tornar o suporte mais acessível desde a abertura do chamado. A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
+O projeto prioriza a API da Groq, usando o modelo `openai/gpt-oss-20b`, para oferecer respostas rápidas. Quando a Groq responde com limite de uso (`HTTP 429`), o sistema usa automaticamente o Ollama em Docker com `qwen3:4b`. Sem `GROQ_API_KEY` configurada, o Ollama continua sendo usado localmente.
+
+A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
 
 A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Quando uma orientação é publicada, o solicitante recebe uma notificação persistida no banco e entregue em tempo real pelo WebSocket. Isso ajuda a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
 
@@ -121,7 +123,10 @@ Em seguida, altere no `.env`:
 
 ```dotenv
 AI_TICKET_HINTS_ENABLED=true
+GROQ_API_KEY=sua_chave_da_groq
 ```
+
+Crie a chave na [Groq Console](https://console.groq.com/keys). A chave não deve ser versionada nem exposta em respostas da API.
 
 E reinicie a API e a fila:
 
@@ -129,7 +134,7 @@ E reinicie a API e a fila:
 docker compose restart app queue
 ```
 
-O Ollama está disponível apenas na máquina local em `http://localhost:11434`. Em máquinas sem GPU o modelo funciona, mas a resposta pode demorar mais.
+O Ollama está disponível apenas na máquina local em `http://localhost:11434`. Em máquinas sem GPU ele pode demorar mais, mas só é acionado quando a Groq atinge o limite ou quando uma chave Groq não foi configurada.
 
 ## Rodando localmente
 

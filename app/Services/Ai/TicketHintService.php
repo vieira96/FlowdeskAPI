@@ -6,9 +6,6 @@ use App\Models\Ai\TicketAiSuggestion;
 use App\Models\Ticket\Ticket;
 use App\Models\Ticket\TicketComment;
 use App\Services\Notification\TicketNotificationService;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
 use JsonException;
 
 class TicketHintService
@@ -25,7 +22,10 @@ class TicketHintService
         'ransomware',
     ];
 
-    public function __construct(private readonly TicketNotificationService $ticketNotificationService) {}
+    public function __construct(
+        private readonly TicketNotificationService $ticketNotificationService,
+        private readonly TicketHintAiGateway $ticketHintAiGateway,
+    ) {}
 
     public function generateFor(Ticket $ticket): void
     {
@@ -33,7 +33,7 @@ class TicketHintService
             ['ticket_id' => $ticket->id],
             [
                 'status' => 'pending',
-                'model' => config('ai.ticket_hints.ollama.model'),
+                'model' => $this->configuredModel(),
             ],
         );
 
@@ -54,8 +54,9 @@ class TicketHintService
         }
 
         try {
-            $analysis = $this->askOllama($ticket);
-        } catch (ConnectionException|JsonException|RequestException $exception) {
+            $result = $this->askAi($ticket);
+            $analysis = $result['analysis'];
+        } catch (\Throwable $exception) {
             $suggestion->update([
                 'status' => 'failed',
                 'failure_reason' => 'Não foi possível gerar a sugestão automática.',
@@ -72,6 +73,7 @@ class TicketHintService
             'classification' => $analysis['classification'],
             'confidence' => $analysis['confidence'],
             'suggestion' => $analysis['suggestion'] ?: null,
+            'model' => $result['model'],
             'generated_at' => now(),
         ]);
 
@@ -84,7 +86,7 @@ class TicketHintService
             'user_id' => null,
             'source' => 'ai',
             'metadata' => [
-                'model' => config('ai.ticket_hints.ollama.model'),
+                'model' => $result['model'],
                 'confidence' => $analysis['confidence'],
             ],
             'body' => "Dica automática do Assistente IA:\n\n{$analysis['suggestion']}",
@@ -94,18 +96,10 @@ class TicketHintService
         $this->ticketNotificationService->notifyAiHintPublished($ticket);
     }
 
-    /** @return array{classification: string, confidence: float, suggestion: string} */
-    private function askOllama(Ticket $ticket): array
+    /** @return array{analysis: array{classification: string, confidence: float, suggestion: string}, model: string} */
+    private function askAi(Ticket $ticket): array
     {
-        $response = Http::acceptJson()
-            ->timeout(config('ai.ticket_hints.ollama.timeout_seconds'))
-            ->post(config('ai.ticket_hints.ollama.base_url').'/api/chat', [
-                'model' => config('ai.ticket_hints.ollama.model'),
-                'stream' => false,
-                'think' => false,
-                'format' => $this->responseSchema(),
-                'options' => ['temperature' => 0],
-                'messages' => [
+        $result = $this->ticketHintAiGateway->generate([
                     [
                         'role' => 'system',
                         'content' => <<<'PROMPT'
@@ -124,15 +118,8 @@ PROMPT,
                         'role' => 'user',
                         'content' => "Título: {$ticket->title}\n\nDescrição: {$ticket->description}",
                     ],
-                ],
-            ])
-            ->throw();
-
-        $content = $response->json('message.content');
-
-        if (! is_string($content)) {
-            throw new JsonException('A resposta do Ollama não contém conteúdo válido.');
-        }
+        ], $this->responseSchema());
+        $content = $result['content'];
 
         /** @var array{classification?: mixed, confidence?: mixed, suggestion?: mixed} $analysis */
         $analysis = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
@@ -145,13 +132,16 @@ PROMPT,
             || (float) $confidence < 0
             || (float) $confidence > 1
             || ! is_string($suggestion)) {
-            throw new JsonException('A resposta do Ollama não segue o formato esperado.');
+            throw new JsonException('A resposta da IA não segue o formato esperado.');
         }
 
         return [
-            'classification' => $classification,
-            'confidence' => (float) $confidence,
-            'suggestion' => trim(mb_substr($suggestion, 0, 1000)),
+            'analysis' => [
+                'classification' => $classification,
+                'confidence' => (float) $confidence,
+                'suggestion' => trim(mb_substr($suggestion, 0, 1000)),
+            ],
+            'model' => $result['model'],
         ];
     }
 
@@ -189,5 +179,12 @@ PROMPT,
         }
 
         return false;
+    }
+
+    private function configuredModel(): string
+    {
+        return config('ai.ticket_hints.groq.enabled') && filled(config('ai.ticket_hints.groq.api_key'))
+            ? config('ai.ticket_hints.groq.model')
+            : config('ai.ticket_hints.ollama.model');
     }
 }

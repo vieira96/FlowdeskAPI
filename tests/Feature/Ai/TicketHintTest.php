@@ -127,6 +127,56 @@ class TicketHintTest extends TestCase
         ]);
     }
 
+    public function test_it_uses_groq_when_an_api_key_is_configured(): void
+    {
+        config()->set('ai.ticket_hints.groq.api_key', 'groq-test-key');
+        Http::fake([
+            'https://api.groq.com/openai/v1/chat/completions' => Http::response([
+                'choices' => [['message' => ['content' => json_encode([
+                    'classification' => 'simple',
+                    'confidence' => 0.91,
+                    'suggestion' => 'Verifique o cabo da impressora.',
+                ], JSON_THROW_ON_ERROR)]]],
+            ]),
+        ]);
+        $ticket = $this->createTicket('Impressora sem conexão', 'A impressora não está disponível.');
+
+        app(TicketHintService::class)->generateFor($ticket);
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.groq.com/openai/v1/chat/completions'
+            && $request->hasHeader('Authorization', 'Bearer groq-test-key'));
+        $this->assertDatabaseHas('ticket_ai_suggestions', [
+            'ticket_id' => $ticket->id,
+            'status' => 'published',
+            'model' => 'openai/gpt-oss-20b',
+        ]);
+    }
+
+    public function test_it_falls_back_to_ollama_only_when_groq_rate_limit_is_reached(): void
+    {
+        config()->set('ai.ticket_hints.groq.api_key', 'groq-test-key');
+        Http::fake([
+            'https://api.groq.com/openai/v1/chat/completions' => Http::response([], 429),
+            'http://ollama:11434/api/chat' => Http::response([
+                'message' => ['content' => json_encode([
+                    'classification' => 'simple',
+                    'confidence' => 0.9,
+                    'suggestion' => 'Recoloque o papel na bandeja.',
+                ], JSON_THROW_ON_ERROR)],
+            ]),
+        ]);
+        $ticket = $this->createTicket('Impressora sem papel', 'A impressora informa que está sem papel.');
+
+        app(TicketHintService::class)->generateFor($ticket);
+
+        Http::assertSentCount(2);
+        $this->assertDatabaseHas('ticket_ai_suggestions', [
+            'ticket_id' => $ticket->id,
+            'status' => 'published',
+            'model' => 'qwen3:4b',
+        ]);
+    }
+
     private function createTicket(string $title, string $description): Ticket
     {
         $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
