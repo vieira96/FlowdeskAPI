@@ -9,15 +9,20 @@ use App\Http\Requests\Api\Ticket\CreateTicketRequest;
 use App\Http\Requests\Api\Ticket\ListTicketsRequest;
 use App\Http\Resources\Api\Ticket\TicketCommentResource;
 use App\Http\Resources\Api\Ticket\TicketResource;
+use App\Http\Resources\Api\Ticket\TicketStatusHistoryResource;
 use App\Models\Ticket\Ticket;
 use App\Services\Ticket\TicketService;
+use App\Services\Ticket\TicketStatusHistoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class TicketController extends Controller
 {
-    public function __construct(private readonly TicketService $ticketService) {}
+    public function __construct(
+        private readonly TicketService $ticketService,
+        private readonly TicketStatusHistoryService $ticketStatusHistoryService,
+    ) {}
 
     public function index(ListTicketsRequest $request): AnonymousResourceCollection
     {
@@ -38,6 +43,13 @@ class TicketController extends Controller
         return new TicketResource($ticket->load(['category', 'team', 'assignee', 'comments.author', 'aiSuggestion']));
     }
 
+    public function history(Request $request, Ticket $ticket): AnonymousResourceCollection
+    {
+        abort_unless($request->user()?->can('view', $ticket), 403);
+
+        return TicketStatusHistoryResource::collection($this->ticketStatusHistoryService->history($ticket));
+    }
+
     public function assume(Request $request, Ticket $ticket): TicketResource
     {
         abort_unless($request->user()?->can('assume', $ticket), 403);
@@ -49,12 +61,12 @@ class TicketController extends Controller
     {
         abort_unless($request->user()?->can('requestHumanAssistance', $ticket), 403);
 
-        return new TicketResource($this->ticketService->requestHumanAssistance($ticket->load('aiSuggestion')));
+        return new TicketResource($this->ticketService->requestHumanAssistance($ticket->load('aiSuggestion'), $request->user()));
     }
 
     public function updateStatus(ChangeTicketStatusRequest $request, Ticket $ticket): TicketResource
     {
-        return new TicketResource($this->ticketService->changeStatus($ticket, $request->validated('status')));
+        return new TicketResource($this->ticketService->changeStatus($ticket, $request->validated('status'), $request->user()));
     }
 
     public function comment(CreateTicketCommentRequest $request, Ticket $ticket): JsonResponse

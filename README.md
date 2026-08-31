@@ -10,6 +10,7 @@ API de gestão de chamados internos feita em Laravel. O projeto cobre abertura d
 - Categorias ligadas a uma equipe responsável.
 - Abertura de tickets por solicitantes.
 - Atendimento: assumir ticket, comentar, resolver e fechar.
+- Histórico de mudanças de status do ticket.
 - SLA por prioridade, com prazo de primeira resposta e resolução.
 - Assistente de IA com Groq e fallback local via Ollama para orientar casos simples, reduzindo chamados repetitivos sem substituir o suporte humano.
 - Notificações persistidas no banco e entregues em tempo real via WebSocket.
@@ -50,7 +51,9 @@ O frontend não informa a equipe do ticket. O backend busca a equipe pela catego
 | Listar tickets | Admin, agente da equipe responsável ou solicitante (somente os próprios) |
 | Assumir ticket | Agente da equipe responsável |
 | Comentar no próprio ticket | Requester |
-| Comentar, resolver ou fechar | Agente que assumiu o ticket |
+| Comentar como agente | Agente que assumiu o ticket |
+| Atualizar status | Solicitante do ticket ou agente que o assumiu |
+| Consultar histórico do ticket | Quem já pode visualizar o ticket |
 
 As regras ficam em `TicketPolicy`. A listagem dos agentes também é filtrada no banco pelo vínculo em `team_members`.
 
@@ -88,6 +91,7 @@ As entidades usam UUID. Há chaves estrangeiras e índices nas consultas mais fr
 - tickets por status e vencimento de SLA para acompanhamento operacional;
 - histórico de atribuição por ticket, agente e equipe;
 - eventos de escalonamento de SLA por ticket e tipo;
+- histórico de status por ticket, agente e data;
 - comentários por ticket/data e autor/data.
 - notificações por usuário, leitura e data de criação.
 
@@ -131,6 +135,18 @@ Para executar a verificação manualmente:
 ```bash
 docker compose exec app php artisan tickets:escalate-sla
 ```
+
+## Histórico de status
+
+Cada mudança de status gera um registro em `ticket_status_histories`, com status anterior, novo status, responsável e data. A atribuição automática por SLA é registrada com ator `system`; quando o solicitante atualiza o próprio ticket, ele também aparece como responsável no histórico.
+
+O histórico pode ser consultado por quem já possui acesso ao ticket:
+
+```text
+GET /api/v1/tickets/{ticketId}/history
+```
+
+O histórico registra a mudança para `in_progress` quando um ticket é assumido e as transições para `resolved` e `closed`.
 
 ## IA para autoatendimento
 
@@ -215,6 +231,7 @@ Endpoints principais:
 | `POST` | `/api/v1/teams/{id}/agents` |
 | `GET`, `POST` | `/api/v1/tickets` |
 | `GET` | `/api/v1/tickets/{id}` |
+| `GET` | `/api/v1/tickets/{id}/history` |
 | `POST` | `/api/v1/tickets/{id}/assume` |
 | `POST` | `/api/v1/tickets/{id}/request-human-assistance` |
 | `PATCH` | `/api/v1/tickets/{id}/status` |
@@ -266,7 +283,6 @@ Os testes de feature cobrem autenticação, isolamento de banco, equipes, catego
 
 ## Próximos passos
 
-- Registrar histórico e auditoria de alterações do chamado.
 - Permitir anexos em tickets e comentários.
 - Criar regras de prioridade e direcionamento automático por categoria.
 - Ampliar a IA para sugerir categoria, equipe responsável e prioridade com base no texto do chamado.

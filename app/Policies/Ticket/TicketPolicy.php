@@ -38,6 +38,10 @@ class TicketPolicy
 
     public function updateStatus(User $user, Ticket $ticket): bool
     {
+        if ($user->role?->slug === 'requester') {
+            return $ticket->requester_id === $user->id;
+        }
+
         return $this->isAgentFromTicketTeam($user, $ticket) && $ticket->assignee_id === $user->id;
     }
 

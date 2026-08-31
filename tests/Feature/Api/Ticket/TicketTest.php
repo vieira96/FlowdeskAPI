@@ -6,6 +6,7 @@ use App\Models\Team\Team;
 use App\Models\Team\TeamCategory;
 use App\Models\Team\TeamMember;
 use App\Models\Ticket\Ticket;
+use App\Models\Ticket\TicketStatusHistory;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,7 +21,7 @@ class TicketTest extends TestCase
         $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
         $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
 
-        $this->withToken($requester->createToken('test')->plainTextToken)
+        $response = $this->withToken($requester->createToken('test')->plainTextToken)
             ->postJson('/api/v1/tickets', [
                 'title' => 'Impressora não imprime',
                 'description' => 'A impressora do Financeiro está parada.',
@@ -260,6 +261,19 @@ class TicketTest extends TestCase
             ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'closed'])
             ->assertOk()
             ->assertJsonPath('data.status', 'closed');
+
+        $this->assertDatabaseHas('ticket_status_histories', [
+            'ticket_id' => $ticket->id,
+            'actor_id' => $agent->id,
+            'old_status' => 'open',
+            'new_status' => 'in_progress',
+        ]);
+        $this->assertDatabaseHas('ticket_status_histories', [
+            'ticket_id' => $ticket->id,
+            'actor_id' => $agent->id,
+            'old_status' => 'in_progress',
+            'new_status' => 'resolved',
+        ]);
     }
 
     public function test_assuming_and_resolving_a_ticket_records_sla_milestones(): void
@@ -296,6 +310,26 @@ class TicketTest extends TestCase
         }
     }
 
+    public function test_requester_can_update_the_status_of_their_own_ticket(): void
+    {
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $ticket = $this->createTicket(TeamCategory::query()->where('name', 'Impressora')->firstOrFail(), $requester);
+        $ticket->update(['assignee_id' => $agent->id, 'status' => 'in_progress']);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->patchJson("/api/v1/tickets/{$ticket->id}/status", ['status' => 'resolved'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'resolved');
+
+        $this->assertDatabaseHas('ticket_status_histories', [
+            'ticket_id' => $ticket->id,
+            'actor_id' => $requester->id,
+            'old_status' => 'in_progress',
+            'new_status' => 'resolved',
+        ]);
+    }
+
     public function test_only_the_assigned_agent_can_comment_on_a_ticket(): void
     {
         $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
@@ -325,6 +359,37 @@ class TicketTest extends TestCase
             ->assertJsonPath('data.body', 'Ainda preciso de ajuda com a impressora.')
             ->assertJsonPath('data.source', 'requester')
             ->assertJsonPath('data.author.id', $requester->id);
+    }
+
+    public function test_a_ticket_viewer_can_access_its_status_history(): void
+    {
+        $requester = User::query()->where('email', 'requester@requester.com')->firstOrFail();
+        $agent = User::query()->where('email', 'agent@agent.com')->firstOrFail();
+        $category = TeamCategory::query()->where('name', 'Impressora')->firstOrFail();
+
+        $response = $this->withToken($requester->createToken('test')->plainTextToken)
+            ->postJson('/api/v1/tickets', [
+                'title' => 'Ticket com histórico de status',
+                'description' => 'Teste de consulta do histórico.',
+                'category_id' => $category->id,
+            ])
+            ->assertCreated();
+
+        $ticketId = $response->json('data.id');
+        TicketStatusHistory::query()->create([
+            'ticket_id' => $ticketId,
+            'actor_id' => $agent->id,
+            'old_status' => 'open',
+            'new_status' => 'in_progress',
+            'changed_at' => now(),
+        ]);
+
+        $this->withToken($requester->createToken('test')->plainTextToken)
+            ->getJson("/api/v1/tickets/{$ticketId}/history")
+            ->assertOk()
+            ->assertJsonPath('data.0.old_status', 'open')
+            ->assertJsonPath('data.0.new_status', 'in_progress')
+            ->assertJsonPath('data.0.actor.id', $agent->id);
     }
 
     public function test_requester_cannot_comment_on_another_requesters_ticket(): void

@@ -19,6 +19,7 @@ class TicketService
     public function __construct(
         private readonly TicketNotificationService $ticketNotificationService,
         private readonly TicketSlaService $ticketSlaService,
+        private readonly TicketStatusHistoryService $ticketStatusHistoryService,
     ) {}
 
     public function paginate(array $filters, User $user): LengthAwarePaginator
@@ -105,7 +106,7 @@ class TicketService
         return $ticket;
     }
 
-    public function requestHumanAssistance(Ticket $ticket): Ticket
+    public function requestHumanAssistance(Ticket $ticket, User $requester): Ticket
     {
         if ($ticket->human_assistance_requested_at !== null) {
             return $ticket;
@@ -127,7 +128,7 @@ class TicketService
         return $ticket;
     }
 
-    public function changeStatus(Ticket $ticket, string $status): Ticket
+    public function changeStatus(Ticket $ticket, string $status, User $actor): Ticket
     {
         $transitions = [
             'in_progress' => ['resolved'],
@@ -140,10 +141,12 @@ class TicketService
             ]);
         }
 
+        $oldStatus = $ticket->status;
         $ticket->update([
             'status' => $status,
             'resolved_at' => $status === 'resolved' ? $this->ticketSlaService->resolvedAt() : $ticket->resolved_at,
         ]);
+        $this->ticketStatusHistoryService->record($ticket, $actor, $oldStatus, $ticket->status);
 
         $ticket->load(['category', 'team', 'assignee', 'requester']);
         $this->ticketNotificationService->notifyStatusChanged($ticket);
@@ -164,6 +167,7 @@ class TicketService
     private function assign(Ticket $ticket, User $agent, string $source): Ticket
     {
         return DB::transaction(function () use ($ticket, $agent, $source): Ticket {
+            $oldStatus = $ticket->status;
             $ticket->update([
                 'assignee_id' => $agent->id,
                 'status' => 'in_progress',
@@ -177,6 +181,13 @@ class TicketService
                 'source' => $source,
                 'assigned_at' => now(),
             ]);
+
+            $this->ticketStatusHistoryService->record(
+                $ticket,
+                $source === 'manual' ? $agent : null,
+                $oldStatus,
+                $ticket->status,
+            );
 
             return $ticket->load(['category', 'team', 'assignee', 'requester']);
         });

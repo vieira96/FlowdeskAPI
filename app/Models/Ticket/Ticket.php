@@ -82,4 +82,9 @@ class Ticket extends Model
     {
         return $this->hasMany(TicketSlaEscalation::class);
     }
+
+    public function statusHistories(): HasMany
+    {
+        return $this->hasMany(TicketStatusHistory::class);
+    }
 }
