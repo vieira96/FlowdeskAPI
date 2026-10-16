@@ -35,6 +35,23 @@ services:
       redis:
         condition: service_healthy
 
+  triage-queue:
+    container_name: flowdesk-triage-queue
+    build:
+      context: .
+    command: php artisan queue:work redis --queue=triage --sleep=1 --tries=2 --timeout=210
+    restart: unless-stopped
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - .:/var/www/html
+    environment:
+      REVERB_HOST: reverb
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   scheduler:
     container_name: flowdesk-scheduler
     build:

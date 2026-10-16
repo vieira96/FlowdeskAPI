@@ -25,7 +25,7 @@ class TicketHintService
 
     public function __construct(
         private readonly TicketNotificationService $ticketNotificationService,
-        private readonly TicketHintAiGateway $ticketHintAiGateway,
+        private readonly AiService $aiService,
         private readonly TicketSlaService $ticketSlaService,
     ) {}
 
@@ -35,7 +35,7 @@ class TicketHintService
             ['ticket_id' => $ticket->id],
             [
                 'status' => 'pending',
-                'model' => $this->configuredModel(),
+                'model' => $this->aiService->configuredModel(),
             ],
         );
 
@@ -72,7 +72,7 @@ class TicketHintService
 
             Log::error('Ticket AI hint generation failed.', [
                 'ticket_id' => $ticket->id,
-                'provider' => $this->configuredProvider(),
+                'provider' => $this->aiService->configuredProvider(),
                 'model' => $suggestion->model,
                 'exception' => $exception::class,
                 'message' => $exception->getMessage(),
@@ -102,10 +102,10 @@ class TicketHintService
         $this->ticketNotificationService->notifyAiHintPublished($ticket);
     }
 
-    /** @return array{analysis: array{classification: string, confidence: float, suggestion: string}, model: string} */
+    /** @return array{analysis: array{classification: string, confidence: float, suggestion: string}, provider: string, model: string} */
     private function askAi(Ticket $ticket): array
     {
-        $result = $this->ticketHintAiGateway->generate([
+        $result = $this->aiService->generate([
             [
                 'role' => 'system',
                 'content' => <<<'PROMPT'
@@ -147,6 +147,7 @@ PROMPT,
                 'confidence' => (float) $confidence,
                 'suggestion' => trim(mb_substr($suggestion, 0, 1000)),
             ],
+            'provider' => $result['provider'],
             'model' => $result['model'],
         ];
     }
@@ -185,20 +186,6 @@ PROMPT,
         }
 
         return false;
-    }
-
-    private function configuredModel(): string
-    {
-        return config('ai.ticket_hints.groq.enabled') && filled(config('ai.ticket_hints.groq.api_key'))
-            ? config('ai.ticket_hints.groq.model')
-            : config('ai.ticket_hints.ollama.model');
-    }
-
-    private function configuredProvider(): string
-    {
-        return config('ai.ticket_hints.groq.enabled') && filled(config('ai.ticket_hints.groq.api_key'))
-            ? 'groq'
-            : 'ollama';
     }
 
     private function notifyTeamWhenNoHintIsPublished(Ticket $ticket): void

@@ -27,7 +27,7 @@ class TicketHintTest extends TestCase
     {
         parent::setUp();
 
-        config()->set('ai.ticket_hints.groq.api_key', null);
+        config()->set('ai.groq.api_key', null);
     }
 
     public function test_ticket_creation_queues_ai_triage_when_enabled(): void
@@ -153,7 +153,7 @@ class TicketHintTest extends TestCase
 
     public function test_it_uses_groq_when_an_api_key_is_configured(): void
     {
-        config()->set('ai.ticket_hints.groq.api_key', 'groq-test-key');
+        config()->set('ai.groq.api_key', 'groq-test-key');
         Http::fake([
             'https://api.groq.com/openai/v1/chat/completions' => Http::response([
                 'choices' => [['message' => ['content' => json_encode([
@@ -178,7 +178,7 @@ class TicketHintTest extends TestCase
 
     public function test_it_falls_back_to_ollama_only_when_groq_rate_limit_is_reached(): void
     {
-        config()->set('ai.ticket_hints.groq.api_key', 'groq-test-key');
+        config()->set('ai.groq.api_key', 'groq-test-key');
         Log::spy();
         Http::fake([
             'https://api.groq.com/openai/v1/chat/completions' => Http::response([], 429),

@@ -13,7 +13,12 @@ class GenerateTicketHintJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public function __construct(public readonly string $ticketId) {}
+    public int $timeout = 210;
+
+    public function __construct(public readonly string $ticketId)
+    {
+        $this->onQueue('triage');
+    }
 
     public function handle(TicketHintService $ticketHintService): void
     {

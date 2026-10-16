@@ -150,9 +150,9 @@ O histórico registra a mudança para `in_progress` quando um ticket é assumido
 
 ## IA para autoatendimento
 
-O projeto prioriza a API da Groq, usando o modelo `openai/gpt-oss-20b`, para oferecer respostas rápidas. Quando a Groq responde com limite de uso (`HTTP 429`), o sistema usa automaticamente o Ollama em Docker com `qwen3:4b`. Sem `GROQ_API_KEY` configurada, o Ollama continua sendo usado localmente.
+O projeto prioriza a API da Groq, usando o modelo `openai/gpt-oss-20b`, para oferecer respostas rápidas. Quando a Groq responde com limite de uso (`HTTP 429`), o sistema tenta o Gemini (`gemini-3.5-flash-lite`) se `GEMINI_API_KEY` estiver configurada; se Gemini também atingir o limite, usa o Ollama em Docker com `qwen3:4b`. Sem chave Groq, o Gemini configurado é usado primeiro, seguido pelo Ollama.
 
-A triagem roda em fila depois que o ticket é aberto. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente.
+A triagem roda na fila Redis `triage` depois que o ticket é aberto, consumida pelo serviço `triage-queue` dedicado no Docker Compose. Assim, o tempo de resposta da IA não ocupa o worker geral de atendimento. O `AiService` genérico centraliza seleção do provedor, modelo, configuração e chamadas; cada serviço de domínio fornece suas mensagens e seu schema de resposta. A Groq é o provedor principal; o Ollama local é usado como fallback quando a Groq retorna limite de uso (`HTTP 429`) ou não há chave configurada. Apenas casos classificados como simples, com confiança mínima de 85%, recebem uma orientação identificada como `Assistente IA`; o ticket não é fechado automaticamente. O timeout do job é 210 segundos e `REDIS_QUEUE_RETRY_AFTER` deve permanecer acima desse valor para evitar que o Redis disponibilize uma triagem ainda em execução para outro worker.
 
 A resposta é escrita para pessoas sem conhecimento técnico: usa linguagem acolhedora, passos curtos e ações seguras. Quando uma orientação é publicada, o solicitante recebe uma notificação persistida no banco e entregue em tempo real pelo WebSocket. Isso ajuda a resolver questões rotineiras — por exemplo, uma impressora sem papel — enquanto casos complexos continuam no fluxo normal da equipe.
 
@@ -160,7 +160,7 @@ Quando a IA não publica uma orientação — por classificar o caso como comple
 
 ### Observabilidade da IA
 
-Falhas da triagem são registradas no log da aplicação com UUID do ticket, provedor, modelo e tipo da exceção. Quando a Groq retorna `HTTP 429`, o log registra o limite atingido e o acionamento do fallback para Ollama. As chaves de API e o conteúdo do chamado não são incluídos nesses logs.
+Falhas da triagem são registradas no log da aplicação com UUID do ticket, provedor, modelo e tipo da exceção. Quando Groq ou Gemini retorna `HTTP 429`, o log registra o limite atingido e o próximo fallback. As chaves de API e o conteúdo do chamado não são incluídos nesses logs.
 
 Chamados que mencionam senha, credenciais, token, vazamento, malware ou segurança não são enviados ao modelo e seguem para atendimento humano.
 
@@ -174,6 +174,7 @@ Em seguida, altere no `.env`:
 
 ```dotenv
 AI_TICKET_HINTS_ENABLED=true
+GEMINI_API_KEY=sua_chave_do_gemini
 GROQ_API_KEY=sua_chave_da_groq
 ```
 
