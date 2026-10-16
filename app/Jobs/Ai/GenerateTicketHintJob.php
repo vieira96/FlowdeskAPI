@@ -6,12 +6,15 @@ use App\Models\Ticket\Ticket;
 use App\Services\Ai\TicketHintService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 class GenerateTicketHintJob implements ShouldQueue
 {
     use Queueable;
 
     public int $tries = 2;
+
+    public int $backoff = 20;
 
     public int $timeout = 210;
 
@@ -31,5 +34,10 @@ class GenerateTicketHintJob implements ShouldQueue
         if ($ticket !== null) {
             $ticketHintService->generateFor($ticket);
         }
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        app(TicketHintService::class)->handleFinalFailure($this->ticketId, $exception);
     }
 }

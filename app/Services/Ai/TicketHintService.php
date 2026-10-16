@@ -7,7 +7,7 @@ use App\Models\Ticket\Ticket;
 use App\Services\Notification\TicketNotificationService;
 use App\Services\Sla\TicketSlaService;
 use Illuminate\Support\Facades\Log;
-use JsonException;
+use Throwable;
 
 class TicketHintService
 {
@@ -60,28 +60,8 @@ class TicketHintService
             return;
         }
 
-        try {
-            $result = $this->askAi($ticket);
-            $analysis = $result['analysis'];
-        } catch (\Throwable $exception) {
-            $suggestion->update([
-                'status' => 'failed',
-                'failure_reason' => 'Não foi possível gerar a sugestão automática.',
-                'generated_at' => now(),
-            ]);
-
-            Log::error('Ticket AI hint generation failed.', [
-                'ticket_id' => $ticket->id,
-                'provider' => $this->aiService->configuredProvider(),
-                'model' => $suggestion->model,
-                'exception' => $exception::class,
-                'message' => $exception->getMessage(),
-            ]);
-            report($exception);
-            $this->notifyTeamWhenNoHintIsPublished($ticket);
-
-            return;
-        }
+        $result = $this->askAi($ticket);
+        $analysis = $result['analysis'];
 
         $suggestion->update([
             'status' => $this->shouldPublish($analysis) ? 'published' : 'skipped',
@@ -102,54 +82,101 @@ class TicketHintService
         $this->ticketNotificationService->notifyAiHintPublished($ticket);
     }
 
+    public function handleFinalFailure(string $ticketId, ?Throwable $exception): void
+    {
+        $ticket = Ticket::query()->find($ticketId);
+
+        if ($ticket === null) {
+            if ($exception !== null) {
+                report($exception);
+            }
+
+            return;
+        }
+
+        $suggestion = TicketAiSuggestion::query()->firstOrCreate(
+            ['ticket_id' => $ticket->id],
+            [
+                'status' => 'pending',
+                'model' => $this->aiService->configuredModel(),
+            ],
+        );
+
+        if ($suggestion->status !== 'pending') {
+            return;
+        }
+
+        $suggestion->update([
+            'status' => 'failed',
+            'failure_reason' => 'Não foi possível gerar a sugestão automática.',
+            'generated_at' => now(),
+        ]);
+
+        Log::error('Ticket AI hint generation failed after all attempts.', [
+            'ticket_id' => $ticket->id,
+            'provider' => $this->aiService->configuredProvider(),
+            'model' => $suggestion->model,
+            'exception' => $exception !== null ? $exception::class : null,
+            'message' => $exception?->getMessage(),
+        ]);
+
+        if ($exception !== null) {
+            report($exception);
+        }
+
+        $this->notifyTeamWhenNoHintIsPublished($ticket);
+    }
+
     /** @return array{analysis: array{classification: string, confidence: float, suggestion: string}, provider: string, model: string} */
     private function askAi(Ticket $ticket): array
     {
         $result = $this->aiService->generate([
             [
                 'role' => 'system',
-                'content' => <<<'PROMPT'
-Você faz a triagem de chamados internos em português do Brasil. Classifique como simple, complex ou unsafe.
-
-Use simple somente quando uma orientação segura, sem risco e sem ação administrativa puder ajudar uma pessoa leiga. Nunca peça senha, token, dados pessoais, alteração de configurações de segurança, acesso privilegiado ou instalação de programas. Para complex e unsafe, suggestion deve ser uma string vazia.
-
-Quando a classificação for simple, escreva a suggestion para uma pessoa sem conhecimento técnico: seja acolhedor, claro e objetivo. Não use jargão e não responda apenas com uma ordem como "verifique o papel". Use este formato, em texto simples:
-
-"Olá! Vamos tentar resolver isso juntos.\n\n1. [primeiro passo simples]\n2. [segundo passo simples, se necessário]\n\n"
-
-Inclua no máximo três passos, cada um com uma ação que a pessoa pode executar com segurança. Não invente informações e não afirme que o problema foi resolvido.
-PROMPT,
+                'content' => $this->getPrompt(),
             ],
             [
                 'role' => 'user',
                 'content' => "Título: {$ticket->title}\n\nDescrição: {$ticket->description}",
             ],
         ], $this->responseSchema(), $ticket->id);
-        $content = $result['content'];
-
-        /** @var array{classification?: mixed, confidence?: mixed, suggestion?: mixed} $analysis */
-        $analysis = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
-        $classification = $analysis['classification'] ?? null;
-        $confidence = $analysis['confidence'] ?? null;
-        $suggestion = $analysis['suggestion'] ?? null;
-
-        if (! in_array($classification, ['simple', 'complex', 'unsafe'], true)
-            || ! is_numeric($confidence)
-            || (float) $confidence < 0
-            || (float) $confidence > 1
-            || ! is_string($suggestion)) {
-            throw new JsonException('A resposta da IA não segue o formato esperado.');
-        }
+        /** @var array{classification: string, confidence: int|float, suggestion: string} $analysis */
+        $analysis = $result['data'];
 
         return [
             'analysis' => [
-                'classification' => $classification,
-                'confidence' => (float) $confidence,
-                'suggestion' => trim(mb_substr($suggestion, 0, 1000)),
+                'classification' => $analysis['classification'],
+                'confidence' => (float) $analysis['confidence'],
+                'suggestion' => trim(mb_substr($analysis['suggestion'], 0, 1000)),
             ],
             'provider' => $result['provider'],
             'model' => $result['model'],
         ];
+    }
+
+    private function getPrompt(): string
+    {
+        return <<<'PROMPT'
+        Você faz a triagem de chamados internos em português do Brasil.
+        Classifique como simple, complex ou unsafe.
+
+        Use simple somente quando uma orientação segura, sem risco e sem ação
+        administrativa puder ajudar uma pessoa leiga. Nunca peça senha, token,
+        dados pessoais, alteração de configurações de segurança, acesso
+        privilegiado ou instalação de programas. Para complex e unsafe, suggestion
+        deve ser uma string vazia.
+
+        Quando a classificação for simple, escreva a suggestion para uma pessoa
+        sem conhecimento técnico: seja acolhedor, claro e objetivo. Não use jargão
+        e não responda apenas com uma ordem como "verifique o papel". Use este
+        formato, em texto simples:
+
+        "Olá! Vamos tentar resolver isso juntos.\n\n1. [primeiro passo simples]\n2. [segundo passo simples, se necessário]\n\n"
+
+        Inclua no máximo três passos, cada um com uma ação que a pessoa pode
+        executar com segurança. Não invente informações e não afirme que o
+        problema foi resolvido.
+        PROMPT;
     }
 
     /** @return array<string, mixed> */

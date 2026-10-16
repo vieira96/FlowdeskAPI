@@ -11,9 +11,13 @@ class AiService
     /**
      * @param  array<int, array{role: string, content: string}>  $messages
      * @param  array<string, mixed>  $schema
-     * @return array{content: string, provider: string, model: string}
+     * @return array{data: array<string, mixed>, provider: string, model: string}
      */
-    public function generate(array $messages, array $schema, ?string $contextId = null): array
+    public function generate(
+        array $messages,
+        array $schema,
+        ?string $contextId = null,
+    ): array
     {
         if ($this->groqIsConfigured()) {
             $response = Http::acceptJson()
@@ -36,11 +40,13 @@ class AiService
             if ($response->status() !== 429) {
                 $response->throw();
 
-                return [
-                    'content' => $this->content($response->json('choices.0.message.content'), 'Groq'),
-                    'provider' => 'groq',
-                    'model' => config('ai.groq.model'),
-                ];
+                return $this->result(
+                    $response->json('choices.0.message.content'),
+                    'Groq',
+                    'groq',
+                    config('ai.groq.model'),
+                    $schema,
+                );
             }
 
             Log::warning('Groq AI quota reached; using Gemini if is configured or Ollama as fallback.', [
@@ -75,11 +81,13 @@ class AiService
             if ($response->status() !== 429) {
                 $response->throw();
 
-                return [
-                    'content' => $this->content($response->json('candidates.0.content.parts.0.text'), 'Gemini'),
-                    'provider' => 'gemini',
-                    'model' => config('ai.gemini.model'),
-                ];
+                return $this->result(
+                    $response->json('candidates.0.content.parts.0.text'),
+                    'Gemini',
+                    'gemini',
+                    config('ai.gemini.model'),
+                    $schema,
+                );
             }
 
             Log::warning('Gemini AI quota reached; using Ollama fallback.', [
@@ -103,11 +111,13 @@ class AiService
             ])
             ->throw();
 
-        return [
-            'content' => $this->content($response->json('message.content'), 'Ollama'),
-            'provider' => 'ollama',
-            'model' => config('ai.ollama.model'),
-        ];
+        return $this->result(
+            $response->json('message.content'),
+            'Ollama',
+            'ollama',
+            config('ai.ollama.model'),
+            $schema,
+        );
     }
 
     public function configuredProvider(): string
@@ -163,12 +173,104 @@ class AiService
         ], $conversation);
     }
 
-    private function content(mixed $content, string $provider): string
+    /** @param array<string, mixed> $schema
+     * @return array{data: array<string, mixed>, provider: string, model: string}
+     */
+    private function result(
+        mixed $content,
+        string $providerName,
+        string $provider,
+        string $model,
+        array $schema,
+    ): array
     {
         if (! is_string($content)) {
-            throw new JsonException("A resposta da {$provider} não contém conteúdo válido.");
+            throw new JsonException("A resposta da {$providerName} não contém conteúdo válido.");
         }
 
-        return $content;
+        $data = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+
+        if (! $this->matchesSchema($data, $schema)) {
+            throw new JsonException("A resposta da {$providerName} não segue o schema esperado.");
+        }
+
+        return compact('data', 'provider', 'model');
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function matchesSchema(
+        mixed $value,
+        array $schema,
+    ): bool
+    {
+        return $this->matchesValue($value, $schema);
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function matchesValue(
+        mixed $value,
+        array $schema,
+    ): bool
+    {
+        $type = $schema['type'] ?? null;
+
+        if (match ($type) {
+            'object' => ! is_array($value) || array_is_list($value),
+            'string' => ! is_string($value),
+            'number' => ! is_int($value) && ! is_float($value),
+            'integer' => ! is_int($value),
+            'boolean' => ! is_bool($value),
+            'array' => ! is_array($value) || ! array_is_list($value),
+            default => true,
+        }) {
+            return false;
+        }
+
+        if (isset($schema['enum']) && ! in_array($value, $schema['enum'], true)) {
+            return false;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            if (isset($schema['minimum']) && $value < $schema['minimum']) {
+                return false;
+            }
+
+            if (isset($schema['maximum']) && $value > $schema['maximum']) {
+                return false;
+            }
+        }
+
+        if (is_string($value) && isset($schema['maxLength']) && mb_strlen($value) > $schema['maxLength']) {
+            return false;
+        }
+
+        if ($type === 'object') {
+            foreach ($schema['required'] ?? [] as $requiredKey) {
+                if (! array_key_exists($requiredKey, $value)) {
+                    return false;
+                }
+            }
+
+            if (($schema['additionalProperties'] ?? true) === false
+                && array_diff_key($value, $schema['properties'] ?? []) !== []) {
+                return false;
+            }
+
+            foreach ($schema['properties'] ?? [] as $key => $propertySchema) {
+                if (array_key_exists($key, $value) && ! $this->matchesValue($value[$key], $propertySchema)) {
+                    return false;
+                }
+            }
+        }
+
+        if ($type === 'array' && isset($schema['items'])) {
+            foreach ($value as $item) {
+                if (! $this->matchesValue($item, $schema['items'])) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 }
