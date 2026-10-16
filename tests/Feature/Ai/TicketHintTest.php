@@ -28,6 +28,7 @@ class TicketHintTest extends TestCase
         parent::setUp();
 
         config()->set('ai.groq.api_key', null);
+        config()->set('ai.gemini.api_key', null);
     }
 
     public function test_ticket_creation_queues_ai_triage_when_enabled(): void
@@ -70,6 +71,7 @@ class TicketHintTest extends TestCase
 
         Http::assertSent(function (Request $request): bool {
             $prompt = $request['messages'][0]['content'] ?? '';
+            $prompt = preg_replace('/\s+/', ' ', $prompt);
 
             return str_contains($prompt, 'pessoa sem conhecimento técnico')
                 && str_contains($prompt, 'Olá! Vamos tentar resolver isso juntos.');
@@ -197,8 +199,8 @@ class TicketHintTest extends TestCase
         Http::assertSentCount(2);
         Log::shouldHaveReceived('warning')
             ->once()
-            ->withArgs(fn (string $message, array $context): bool => $message === 'Groq AI quota reached; using Ollama fallback.'
-                && $context['ticket_id'] === $ticket->id
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Groq AI quota reached; using Gemini if is configured or Ollama as fallback.'
+                && $context['context_id'] === $ticket->id
                 && $context['http_status'] === 429
                 && $context['fallback_provider'] === 'ollama');
         $this->assertDatabaseHas('ticket_ai_suggestions', [
@@ -214,10 +216,15 @@ class TicketHintTest extends TestCase
         Http::fake(['http://ollama:11434/api/chat' => Http::response([], 500)]);
         $ticket = $this->createTicket('Impressora sem papel', 'Descrição que não deve ser registrada no log.');
 
-        app(TicketHintService::class)->generateFor($ticket);
+        try {
+            app(TicketHintService::class)->generateFor($ticket);
+            $this->fail('A falha do provedor deve voltar ao worker para permitir o retry.');
+        } catch (\Throwable $exception) {
+            (new GenerateTicketHintJob($ticket->id))->failed($exception);
+        }
 
         Log::shouldHaveReceived('error')
-            ->withArgs(fn (string $message, array $context): bool => $message === 'Ticket AI hint generation failed.'
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Ticket AI hint generation failed after all attempts.'
                 && $context['ticket_id'] === $ticket->id
                 && $context['provider'] === 'ollama'
                 && ! array_key_exists('description', $context));

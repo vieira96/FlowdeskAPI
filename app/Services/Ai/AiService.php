@@ -156,7 +156,10 @@ class AiService
         $instructions = array_filter($messages, fn (array $message): bool => $message['role'] === 'system');
 
         return [
-            'parts' => array_map(fn (array $message): array => ['text' => $message['content']], $instructions),
+            'parts' => array_values(array_map(
+                fn (array $message): array => ['text' => $message['content']],
+                $instructions,
+            )),
         ];
     }
 
@@ -167,10 +170,13 @@ class AiService
     {
         $conversation = array_filter($messages, fn (array $message): bool => $message['role'] !== 'system');
 
-        return array_map(fn (array $message): array => [
-            'role' => $message['role'] === 'assistant' ? 'model' : 'user',
-            'parts' => [['text' => $message['content']]],
-        ], $conversation);
+        return array_values(array_map(
+            fn (array $message): array => [
+                'role' => $message['role'] === 'assistant' ? 'model' : 'user',
+                'parts' => [['text' => $message['content']]],
+            ],
+            $conversation,
+        ));
     }
 
     /** @param array<string, mixed> $schema
